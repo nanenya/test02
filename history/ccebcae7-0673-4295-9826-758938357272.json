@@ -1,0 +1,89 @@
+{
+  "id": "ccebcae7-0673-4295-9826-758938357272",
+  "title": "계획 수립: 새로운 Git 브랜치 'b01'을 생...",
+  "last_updated": "2025-10-27T11:40:09.207026",
+  "history": [
+    "사용자 요청: b01이라는 git branch를 만들고 *_01.py, *_02.py 파일들을 지우고 add commit push까지 해줘",
+    "✅ 그룹 실행 시작: [group_1] 새로운 Git 브랜치 'b01'을 생성하고, 해당 브랜치로 작업을 전환합니다.",
+    "  - 도구 실행: git_create_branch (인자: {'branch_name': 'b01'})",
+    "  - 실행 결과: None",
+    "  - 도구 실행: git_switch_branch (인자: {'branch_name': 'b01'})",
+    "  - 실행 결과: None",
+    "🏁 그룹 실행 완료: [group_1]",
+    "✅ 그룹 실행 시작: [group_2] 현재 디렉토리 및 하위 디렉토리에서 `*_01.py`와 `*_02.py` 패턴과 일치하는 모든 파일을 찾아 삭제합니다.",
+    "  - 도구 실행: execute_shell_command (인자: {'command': \"find . -type f -name '*_01.py' -delete\"})",
+    "  - 실행 결과: ",
+    "  - 도구 실행: execute_shell_command (인자: {'command': \"find . -type f -name '*_02.py' -delete\"})",
+    "  - 실행 결과: ",
+    "🏁 그룹 실행 완료: [group_2]"
+  ],
+  "plan": [
+    {
+      "group_id": "group_1",
+      "description": "새로운 Git 브랜치 'b01'을 생성하고, 해당 브랜치로 작업을 전환합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_create_branch",
+          "arguments": {
+            "branch_name": "b01"
+          }
+        },
+        {
+          "tool_name": "git_switch_branch",
+          "arguments": {
+            "branch_name": "b01"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_2",
+      "description": "현재 디렉토리 및 하위 디렉토리에서 `*_01.py`와 `*_02.py` 패턴과 일치하는 모든 파일을 찾아 삭제합니다.",
+      "tasks": [
+        {
+          "tool_name": "execute_shell_command",
+          "arguments": {
+            "command": "find . -type f -name '*_01.py' -delete"
+          }
+        },
+        {
+          "tool_name": "execute_shell_command",
+          "arguments": {
+            "command": "find . -type f -name '*_02.py' -delete"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_3",
+      "description": "파일 삭제 내역을 Git에 반영(add, commit)하고, 'b01' 브랜치를 원격 저장소에 푸시합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_add",
+          "arguments": {
+            "repo_path": ".",
+            "files": [
+              "."
+            ]
+          }
+        },
+        {
+          "tool_name": "git_commit",
+          "arguments": {
+            "repo_path": ".",
+            "message": "chore: Remove files matching *_01.py and *_02.py"
+          }
+        },
+        {
+          "tool_name": "git_push",
+          "arguments": {
+            "repo_path": ".",
+            "remote": "origin",
+            "branch": "b01"
+          }
+        }
+      ]
+    }
+  ],
+  "current_group_index": 2
+}
