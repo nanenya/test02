@@ -1,0 +1,25 @@
+mcp_name: delete_file
+version: 1.0.0
+description: 지정된 파일을 삭제합니다.
+arguments:
+  - name: path
+    type: str
+    description: 삭제할 파일의 전체 또는 상대 경로.
+    required: true
+  - name: missing_ok
+    type: bool
+    description: 삭제할 파일이 존재하지 않을 때 FileNotFoundError를 발생시키지 않을지 여부. True로 설정하면 멱등성을 보장합니다.
+    required: false
+    default: false
+return_value:
+  type: bool
+  description: 파일이 성공적으로 삭제되었거나, missing_ok=True이고 파일이 원래부터 없었을 경우 True를 반환합니다.
+exceptions:
+  - ValueError: 제공된 경로가 유효하지 않은 값(None 또는 빈 문자열)일 경우 발생합니다.
+  - IsADirectoryError: 삭제하려는 대상이 파일이 아닌 디렉토리일 경우 발생합니다.
+  - FileNotFoundError: `missing_ok`가 False이고 파일이 존재하지 않을 경우 발생합니다.
+  - PermissionError: 파일을 삭제할 권한이 없을 경우 발생합니다.
+dependencies: []
+cost_tier: low
+permissions_required:
+  - file_write

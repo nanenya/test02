@@ -1,0 +1,12 @@
+
+fastapi
+uvicorn[standard]
+typer[all]
+pydantic
+google-generativeai
+python-dotenv
+httpx  # 비동기 HTTP 요청을 위한 라이브러리
+feedparser
+bs4
+requests_mock
+pytest-mock

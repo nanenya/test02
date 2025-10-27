@@ -1,0 +1,24 @@
+mcp_name: rename
+version: 1.0.0
+description: 파일 또는 디렉토리의 이름을 변경하거나 다른 위치로 이동시킵니다.
+arguments:
+  - name: source_path
+    type: str
+    description: 이름을 바꿀 원본 파일 또는 디렉토리의 경로.
+    required: true
+  - name: destination_path
+    type: str
+    description: 새로운 파일 또는 디렉토리의 경로. 대상 경로에 이미 무엇인가 존재하면 오류가 발생합니다.
+    required: true
+return_value:
+  type: str
+  description: 성공 시, 변경된 새로운 경로의 절대 경로를 문자열로 반환합니다.
+exceptions:
+  - ValueError: 원본 또는 대상 경로가 유효하지 않은 값일 경우 발생합니다.
+  - FileNotFoundError: 원본 경로가 존재하지 않을 경우 발생합니다.
+  - FileExistsError: 대상 경로에 이미 파일이나 디렉토리가 존재할 경우 발생합니다.
+  - PermissionError: 작업을 수행할 권한이 없을 경우 발생합니다.
+dependencies: []
+cost_tier: low
+permissions_required:
+  - file_write # 이동/이름변경은 쓰기 권한으로 간주

@@ -1,0 +1,21 @@
+mcp_name: delete_empty_directory
+version: 1.0.0
+description: 비어 있는 디렉토리를 삭제합니다. 내용이 있는 디렉토리는 삭제하지 않아 안전합니다.
+arguments:
+  - name: path
+    type: str
+    description: 삭제할 비어 있는 디렉토리의 전체 또는 상대 경로.
+    required: true
+return_value:
+  type: bool
+  description: 성공적으로 디렉토리를 삭제했을 경우 True를 반환합니다.
+exceptions:
+  - ValueError: 제공된 경로가 유효하지 않은 값(None 또는 빈 문자열)일 경우 발생합니다.
+  - NotADirectoryError: 삭제하려는 대상이 디렉토리가 아닐 경우 발생합니다.
+  - FileNotFoundError: 삭제할 디렉토리가 존재하지 않을 경우 발생합니다.
+  - OSError: 디렉토리가 비어있지 않을 경우 발생합니다.
+  - PermissionError: 디렉토리를 삭제할 권한이 없을 경우 발생합니다.
+dependencies: []
+cost_tier: low
+permissions_required:
+  - file_write

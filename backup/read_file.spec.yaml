@@ -1,0 +1,27 @@
+mcp_name: read_file
+version: 1.0.0
+description: 지정된 경로의 텍스트 파일 내용을 읽어 문자열로 반환합니다.
+arguments:
+  - name: path
+    type: str
+    description: 읽을 파일의 전체 또는 상대 경로.
+    required: true
+  - name: encoding
+    type: str
+    description: 파일을 읽을 때 사용할 인코딩 방식.
+    required: false
+    default: 'utf-8'
+return_value:
+  type: str
+  description: 성공 시, 파일의 전체 텍스트 내용. 실패 시에는 예외가 발생합니다.
+exceptions:
+  - FileNotFoundError: 지정된 경로에 파일이 존재하지 않을 경우 발생합니다.
+  - PermissionError: 파일을 읽을 수 있는 권한이 없을 경우 발생합니다.
+  - IsADirectoryError: 지정된 경로가 파일이 아닌 디렉토리일 경우 발생합니다.
+  - UnicodeDecodeError: 지정된 인코딩으로 파일 내용을 디코딩할 수 없을 경우 발생합니다.
+  - ValueError: 경로가 유효하지 않거나 보안상 위험할 경우 발생합니다.
+  - IOError: 그 외 다양한 입출력 관련 오류 발생 시 발생합니다.
+dependencies: [] # 표준 라이브러리만 사용하므로 의존성 없음
+cost_tier: low
+permissions_required:
+  - file_read

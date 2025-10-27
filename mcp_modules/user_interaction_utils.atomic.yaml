@@ -1,0 +1,179 @@
+mcps:
+  - mcp_name: ask_user_for_input
+    version: 1.0.0
+    description: 사용자에게 단일 텍스트 라인 질문을 던지고, 문자열 입력을 받아 반환합니다.
+    arguments:
+      - name: question
+        type: str
+        description: 사용자에게 표시할 질문 문자열.
+    return_value:
+      type: str
+      description: 사용자가 입력한 텍스트.
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: ask_for_multiline_input
+    version: 1.0.0
+    description: 사용자에게 여러 줄의 텍스트 입력을 요청합니다. 사용자는 'EOF'를 입력하여 종료합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 표시할 안내 메시지.
+    return_value:
+      type: str
+      description: 사용자가 입력한 여러 줄의 텍스트.
+    dependencies: []
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: ask_user_for_confirmation
+    version: 1.0.0
+    description: 사용자에게 예(Yes)/아니오(No) 질문을 하고, True/False 불리언 값을 반환합니다.
+    arguments:
+      - name: question
+        type: str
+        description: 사용자에게 표시할 확인 질문.
+    return_value:
+      type: bool
+      description: 사용자가 '예'를 선택하면 True, '아니오'를 선택하면 False.
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: ask_for_password
+    version: 1.0.0
+    description: 사용자에게 민감한 정보(비밀번호 등)를 입력받습니다. 입력 내용은 화면에 표시되지 않습니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 표시할 안내 메시지.
+    return_value:
+      type: str
+      description: 사용자가 입력한 비밀번호 문자열.
+    exceptions:
+      - IOError: 터미널이 없어 안전한 입력이 불가능할 경우 발생.
+    dependencies: []
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: show_message
+    version: 1.0.0
+    description: 사용자에게 단순 정보성 메시지를 보여줍니다.
+    arguments:
+      - name: message
+        type: str
+        description: 출력할 메시지.
+    return_value:
+      type: None
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: display_table
+    version: 1.0.0
+    description: 구조화된 데이터를 표(Table) 형식으로 깔끔하게 출력합니다.
+    arguments:
+      - name: data
+        type: List[Dict[str, Any]]
+        description: 표로 만들 데이터. 각 딕셔너리가 행(row)이 됩니다.
+      - name: headers
+        type: List[str]
+        description: 표의 헤더(열 제목) 리스트.
+    return_value:
+      type: None
+    exceptions:
+      - ValueError: 데이터나 헤더가 비어있거나 형식이 맞지 않을 경우.
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: show_progress_bar
+    version: 1.0.0
+    description: 전체 작업량에 대한 진행률 표시줄(Progress Bar)을 보여줍니다.
+    arguments:
+      - name: total
+        type: int
+        description: 전체 작업량.
+      - name: description
+        type: str
+        optional: true
+        default: "Processing..."
+        description: 진행률 표시줄에 표시될 설명.
+    return_value:
+      type: None
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: clear_screen
+    version: 1.0.0
+    description: 터미널이나 콘솔 화면을 깨끗하게 지웁니다.
+    arguments: []
+    return_value:
+      type: None
+    dependencies: []
+    cost_tier: low
+    permissions_required: [ "shell_execute" ]
+
+  - mcp_name: show_alert
+    version: 1.0.0
+    description: 심각도 수준('info', 'success', 'warning', 'error')에 따라 다른 스타일의 경고 메시지를 보여줍니다.
+    arguments:
+      - name: message
+        type: str
+        description: 표시할 경고 메시지.
+      - name: level
+        type: str
+        optional: true
+        default: "info"
+        description: 경고 수준.
+    return_value:
+      type: None
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: render_markdown
+    version: 1.0.0
+    description: 마크다운 형식의 텍스트를 서식이 적용된 형태로 터미널에 출력합니다.
+    arguments:
+      - name: markdown_text
+        type: str
+        description: 렌더링할 마크다운 텍스트.
+    return_value:
+      type: None
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: show_spinner
+    version: 1.0.0
+    description: 작업이 진행 중임을 알리는 애니메이션 스피너를 보여줍니다.
+    arguments:
+      - name: message
+        type: str
+        description: 스피너와 함께 표시될 메시지.
+      - name: duration_sec
+        type: float
+        optional: true
+        default: 2.0
+        description: 스피너를 보여줄 시간(초).
+    return_value:
+      type: None
+    dependencies: [ "rich" ]
+    cost_tier: low
+    permissions_required: [ "console_access" ]
+
+  - mcp_name: update_last_line
+    version: 1.0.0
+    description: 콘솔의 마지막 라인에 출력된 메시지를 새로운 메시지로 덮어씁니다.
+    arguments:
+      - name: message
+        type: str
+        description: 덮어쓸 새로운 메시지.
+    return_value:
+      type: None
+    dependencies: []
+    cost_tier: low
+    permissions_required: [ "console_access" ]

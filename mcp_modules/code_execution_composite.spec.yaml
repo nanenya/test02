@@ -1,0 +1,198 @@
+mcp_collection:
+  - mcp_name: run_python_script
+    version: 1.0.0
+    description: 지정된 경로의 파이썬 스크립트 파일을 실행하고 결과를 반환합니다.
+    arguments:
+      - name: script_path
+        type: str
+        description: 실행할 파이썬 스크립트의 경로.
+    return_value:
+      type: str
+      description: 스크립트 실행의 표준 출력(stdout) 결과.
+    exceptions:
+      - FileNotFoundError: 스크립트 파일이 존재하지 않을 경우.
+      - subprocess.CalledProcessError: 스크립트 실행 중 오류가 발생한 경우.
+    dependencies: [python]
+    cost_tier: medium
+    permissions_required: [shell_execute, file_read]
+
+  - mcp_name: install_python_package
+    version: 1.0.0
+    description: pip을 이용해 특정 파이썬 패키지를 설치합니다.
+    arguments:
+      - name: package_name
+        type: str
+        description: 설치할 파이썬 패키지의 이름 (예: "requests", "numpy==1.23.5").
+    return_value:
+      type: str
+      description: pip install 명령어의 표준 출력 결과.
+    exceptions:
+      - ValueError: 패키지 이름이 유효하지 않은 형식일 경우.
+      - subprocess.CalledProcessError: 패키지 설치에 실패한 경우.
+    dependencies: [python, pip]
+    cost_tier: medium
+    permissions_required: [shell_execute, network_access]
+
+  - mcp_name: uninstall_python_package
+    version: 1.0.0
+    description: pip을 이용해 설치된 파이썬 패키지를 삭제합니다.
+    arguments:
+      - name: package_name
+        type: str
+        description: 삭제할 파이썬 패키지의 이름.
+    return_value:
+      type: str
+      description: pip uninstall 명령어의 표준 출력 결과.
+    exceptions:
+      - ValueError: 패키지 이름이 유효하지 않은 형식일 경우.
+      - subprocess.CalledProcessError: 패키지 삭제에 실패한 경우.
+    dependencies: [python, pip]
+    cost_tier: medium
+    permissions_required: [shell_execute]
+
+  - mcp_name: lint_code_file
+    version: 1.0.0
+    description: 코드 파일의 문법 오류나 스타일 문제를 검사(linting)합니다.
+    arguments:
+      - name: file_path
+        type: str
+        description: 린트 검사를 수행할 파일의 경로.
+      - name: linter
+        type: str
+        optional: true
+        default: "flake8"
+        description: 사용할 린터 (예: "flake8", "black").
+    return_value:
+      type: str
+      description: 린트 검사 결과.
+    exceptions:
+      - FileNotFoundError: 파일이 존재하지 않을 경우.
+    dependencies: [flake8, black]
+    cost_tier: low
+    permissions_required: [shell_execute, file_read]
+
+  - mcp_name: format_code_file
+    version: 1.0.0
+    description: 코드 포매터(black)를 실행하여 코드 스타일을 자동으로 정리합니다.
+    arguments:
+      - name: file_path
+        type: str
+        description: 코드 포맷팅을 적용할 파일의 경로.
+    return_value:
+      type: str
+      description: 포맷팅 결과 메시지.
+    exceptions:
+      - FileNotFoundError: 파일이 존재하지 않을 경우.
+      - subprocess.CalledProcessError: 포맷팅 중 오류가 발생한 경우.
+    dependencies: [black]
+    cost_tier: low
+    permissions_required: [shell_execute, file_read, file_write]
+
+  - mcp_name: get_git_status
+    version: 1.0.0
+    description: 지정된 로컬 저장소의 git 상태를 확인합니다.
+    arguments:
+      - name: repo_path
+        type: str
+        description: git 저장소의 경로.
+    return_value:
+      type: str
+      description: 'git status' 명령어의 실행 결과.
+    exceptions:
+      - FileNotFoundError: 지정된 경로가 디렉토리가 아닐 경우.
+      - subprocess.CalledProcessError: git 명령어 실행에 실패한 경우.
+    dependencies: [git]
+    cost_tier: low
+    permissions_required: [shell_execute, file_read]
+
+  - mcp_name: clone_git_repository
+    version: 1.0.0
+    description: 원격 Git 저장소를 지정된 경로에 복제(clone)합니다.
+    arguments:
+      - name: repo_url
+        type: str
+        description: 복제할 원격 저장소의 URL.
+      - name: clone_path
+        type: str
+        description: 저장소를 복제할 로컬 디렉토리 경로.
+    return_value:
+      type: str
+      description: 성공적으로 복제되었다는 메시지.
+    exceptions:
+      - ValueError: Git URL이 유효하지 않은 형식일 경우.
+      - FileExistsError: 복제할 경로가 이미 존재하는 경우.
+    dependencies: [git]
+    cost_tier: high
+    permissions_required: [shell_execute, file_write, network_access]
+
+  - mcp_name: setup_python_venv
+    version: 1.0.0
+    description: 지정된 경로에 파이썬 가상 환경을 생성합니다.
+    arguments:
+      - name: path
+        type: str
+        description: 가상 환경을 생성할 디렉토리 경로.
+    return_value:
+      type: str
+      description: 가상 환경이 성공적으로 생성되었다는 메시지.
+    exceptions:
+      - FileExistsError: 지정된 경로가 이미 존재하는 경우.
+    dependencies: [python]
+    cost_tier: medium
+    permissions_required: [shell_execute, file_write]
+
+  - mcp_name: build_docker_image
+    version: 1.0.0
+    description: 지정된 Dockerfile을 사용하여 새로운 도커 이미지를 빌드합니다.
+    arguments:
+      - name: dockerfile_path
+        type: str
+        description: Dockerfile이 위치한 디렉토리 경로.
+      - name: image_name
+        type: str
+        description: 빌드할 이미지의 이름과 태그.
+    return_value:
+      type: str
+      description: 'docker build' 명령어의 실행 결과.
+    exceptions:
+      - FileNotFoundError: Dockerfile 경로가 디렉토리가 아닐 경우.
+      - ValueError: 이미지 이름이 유효하지 않은 형식일 경우.
+    dependencies: [docker]
+    cost_tier: high
+    permissions_required: [shell_execute, file_read]
+
+  - mcp_name: run_container_from_image
+    version: 1.0.0
+    description: 지정된 도커 이미지로 컨테이너를 실행하고 컨테이너 ID를 반환합니다.
+    arguments:
+      - name: image_name
+        type: str
+        description: 실행할 도커 이미지의 이름.
+      - name: ports
+        type: Dict[int, int]
+        optional: true
+        description: 포트 매핑. {host_port: container_port}.
+    return_value:
+      type: str
+      description: 실행된 컨테이너의 ID.
+    exceptions:
+      - ValueError: 이미지 이름이나 포트 번호가 유효하지 않은 경우.
+    dependencies: [docker]
+    cost_tier: high
+    permissions_required: [shell_execute, network_access]
+
+  - mcp_name: get_container_logs
+    version: 1.0.0
+    description: 실행 중인 도커 컨테이너의 로그를 가져옵니다.
+    arguments:
+      - name: container_id
+        type: str
+        description: 로그를 조회할 컨테이너의 ID 또는 이름.
+    return_value:
+      type: str
+      description: 해당 컨테이너의 로그.
+    exceptions:
+      - ValueError: 컨테이너 ID 형식이 유효하지 않은 경우.
+    dependencies: [docker]
+    cost_tier: low
+    permissions_required: [shell_execute]

@@ -1,0 +1,97 @@
+# 파일 시스템의 기본적인 파일 및 디렉토리 관리 기능 모음
+mcp_module_name: file_management
+version: 1.0.0
+mcps:
+  - mcp_name: create_directory
+    description: 지정된 경로에 새로운 디렉토리(폴더)를 생성합니다. 중간 경로도 함께 생성할 수 있습니다.
+    arguments:
+      - name: path
+        type: str
+        description: 생성할 디렉토리의 경로.
+        required: true
+      - name: exist_ok
+        type: bool
+        description: 디렉토리가 이미 존재할 때 예외를 발생시키지 않을지 여부.
+        required: false
+        default: true
+    return_value:
+      type: str
+      description: 성공 시, 생성된 디렉토리의 절대 경로.
+    exceptions:
+      - ValueError: 경로가 유효하지 않을 경우.
+      - PermissionError: 디렉토리 생성 권한이 없을 경우.
+      - FileExistsError: 경로에 이미 파일이 존재하거나, `exist_ok=False`인데 디렉토리가 이미 존재할 경우.
+    cost_tier: low
+    permissions_required: [file_write]
+
+  - mcp_name: list_directory
+    description: 지정된 디렉토리의 파일 및 하위 디렉토리 이름 목록을 리스트로 반환합니다.
+    arguments:
+      - name: path
+        type: str
+        description: 내용을 조회할 디렉토리의 경로.
+        required: true
+    return_value:
+      type: list[str]
+      description: 디렉토리 내의 파일 및 폴더 이름 목록.
+    exceptions:
+      - FileNotFoundError: 디렉토리가 존재하지 않을 경우.
+      - NotADirectoryError: 경로가 디렉토리가 아닐 경우.
+      - PermissionError: 디렉토리 접근 권한이 없을 경우.
+    cost_tier: low
+    permissions_required: [file_read]
+
+  - mcp_name: rename
+    description: 파일 또는 디렉토리의 이름을 변경합니다.
+    arguments:
+      - name: source_path
+        type: str
+        description: 이름을 변경할 원본 파일 또는 디렉토리의 경로.
+        required: true
+      - name: new_name
+        type: str
+        description: 적용할 새로운 이름 (경로 구분자 포함 불가).
+        required: true
+    return_value:
+      type: str
+      description: 이름이 변경된 후의 새로운 절대 경로.
+    exceptions:
+      - FileNotFoundError: 원본 경로가 존재하지 않을 경우.
+      - FileExistsError: 새로운 이름의 파일/디렉토리가 이미 존재할 경우.
+      - ValueError: 새 이름에 경로 구분자가 포함된 경우.
+    cost_tier: low
+    permissions_required: [file_write]
+
+  - mcp_name: delete_file
+    description: 지정된 파일을 삭제합니다.
+    arguments:
+      - name: path
+        type: str
+        description: 삭제할 파일의 경로.
+        required: true
+    return_value:
+      type: bool
+      description: 파일 삭제 성공 시 True.
+    exceptions:
+      - FileNotFoundError: 파일이 존재하지 않을 경우.
+      - IsADirectoryError: 경로가 파일이 아닌 디렉토리일 경우.
+      - PermissionError: 파일 삭제 권한이 없을 경우.
+    cost_tier: low
+    permissions_required: [file_write]
+
+  - mcp_name: delete_empty_directory
+    description: 비어 있는 디렉토리를 삭제합니다. 내용이 있을 경우 실패합니다.
+    arguments:
+      - name: path
+        type: str
+        description: 삭제할 비어있는 디렉토리의 경로.
+        required: true
+    return_value:
+      type: bool
+      description: 디렉토리 삭제 성공 시 True.
+    exceptions:
+      - FileNotFoundError: 디렉토리가 존재하지 않을 경우.
+      - NotADirectoryError: 경로가 디렉토리가 아닐 경우.
+      - OSError: 디렉토리가 비어있지 않을 경우.
+    cost_tier: low
+    permissions_required: [file_write]

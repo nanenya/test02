@@ -1,0 +1,20 @@
+mcp_name: list_directory
+version: 1.0.0
+description: 지정된 디렉토리의 파일 및 하위 디렉토리 목록을 리스트로 반환합니다.
+arguments:
+  - name: path
+    type: str
+    description: 내용을 조회할 디렉토리의 전체 또는 상대 경로.
+    required: true
+return_value:
+  type: List[str]
+  description: 디렉토리 내 항목들의 이름이 담긴 문자열 리스트. 디렉토리가 비어있으면 빈 리스트를 반환합니다.
+exceptions:
+  - ValueError: 제공된 경로가 유효하지 않은 값(None 또는 빈 문자열)일 경우 발생합니다.
+  - NotADirectoryError: 지정된 경로가 디렉토리가 아닐 경우 발생합니다.
+  - FileNotFoundError: 지정된 경로가 존재하지 않을 경우 발생합니다.
+  - PermissionError: 디렉토리를 읽을 권한이 없을 경우 발생합니다.
+dependencies: []
+cost_tier: low
+permissions_required:
+  - file_read

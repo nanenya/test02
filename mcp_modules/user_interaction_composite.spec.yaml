@@ -1,0 +1,206 @@
+# MCP Toolkit Specification: User Interaction Primitives
+mcp_toolkit_name: user_interaction_primitives
+version: 1.0.0
+description: >-
+  AI 에이전트가 CLI 환경에서 사용자와 상호작용하기 위한 고수준 복합 MCP 모음입니다.
+
+primitives:
+  - mcp_name: present_options_and_get_choice
+    version: 1.0.0
+    description: 사용자에게 번호가 매겨진 선택지 목록을 보여주고, 그중 하나를 선택하게 하여 선택된 항목을 반환합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문 메시지.
+      - name: options
+        type: List[str]
+        description: 사용자에게 제공할 선택지 문자열 리스트.
+    return_value:
+      type: Optional[str]
+      description: 성공 시 사용자가 선택한 항목의 문자열, 취소 시 None.
+    exceptions:
+      - ValueError: 선택지(options) 리스트가 비어 있을 경우.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: present_checkbox_and_get_choices
+    version: 1.0.0
+    description: 여러 선택지를 체크박스 형태로 보여주고, 사용자가 다중 선택한 항목들의 리스트를 반환합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문 메시지.
+      - name: options
+        type: List[str]
+        description: 사용자에게 제공할 선택지 문자열 리스트.
+    return_value:
+      type: List[str]
+      description: 사용자가 선택한 모든 항목의 문자열 리스트. 아무것도 선택하지 않거나 취소하면 빈 리스트 반환.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: ask_for_file_path
+    version: 1.0.0
+    description: 사용자에게 파일 경로를 입력하도록 요청하고, 경로의 유효성을 검증합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문 메시지.
+      - name: default_path
+        type: str
+        optional: true
+        default: ""
+        description: 기본으로 보여줄 경로.
+      - name: must_exist
+        type: bool
+        optional: true
+        default: true
+        description: 파일이 반드시 존재해야 하는지 여부.
+    return_value:
+      type: Optional[str]
+      description: 유효한 파일의 전체 경로 문자열, 취소 시 None.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction", "file_system_read" ]
+
+  - mcp_name: ask_for_directory_path
+    version: 1.0.0
+    description: 사용자에게 디렉토리 경로를 입력하도록 요청하고, 경로의 유효성을 검증합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문 메시지.
+      - name: default_path
+        type: str
+        optional: true
+        default: ""
+        description: 기본으로 보여줄 경로.
+      - name: must_exist
+        type: bool
+        optional: true
+        default: true
+        description: 디렉토리가 반드시 존재해야 하는지 여부.
+    return_value:
+      type: Optional[str]
+      description: 유효한 디렉토리의 전체 경로 문자열, 취소 시 None.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction", "file_system_read" ]
+
+  - mcp_name: confirm_critical_action
+    version: 1.0.0
+    description: 중요한 작업을 실행하기 전, 상세 내용을 보여주고 사용자에게 재확인받습니다.
+    arguments:
+      - name: action_description
+        type: str
+        description: 수행할 작업에 대한 간결한 설명 (예: "총 5개의 파일을 영구적으로 삭제합니다.")
+      - name: details_to_show
+        type: Optional[str]
+        optional: true
+        default: None
+        description: 사용자에게 보여줄 추가적인 상세 정보 (예: 삭제될 파일 목록).
+    return_value:
+      type: bool
+      description: 사용자가 'Yes'를 선택하면 True, 'No'를 선택하거나 취소하면 False.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: get_form_input
+    version: 1.0.0
+    description: 정의된 여러 필드에 대해 순차적으로 질문하여, 폼(Form)처럼 사용자 입력을 받습니다.
+    arguments:
+      - name: form_fields
+        type: Dict[str, str]
+        description: key는 결과의 키가 되고, value는 사용자에게 보여줄 질문이 되는 딕셔너리.
+    return_value:
+      type: Dict[str, Any]
+      description: 사용자가 각 필드에 대해 입력한 값을 담은 딕셔너리.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: ask_for_validated_input
+    version: 1.0.0
+    description: 정규식을 기반으로 입력값의 유효성을 검증하며 사용자 입력을 받습니다.
+    arguments:
+      - name: question
+        type: str
+        description: 사용자에게 보여줄 질문.
+      - name: validation_rule
+        type: Dict[str, str]
+        description: "'regex': '패턴', 'message': '오류메시지'" 형식의 검증 규칙 딕셔너리.
+    return_value:
+      type: Optional[str]
+      description: 유효성 검증을 통과한 사용자 입력 문자열. 취소 시 None.
+    exceptions:
+      - KeyError: validation_rule 딕셔너리에 'regex'나 'message' 키가 없을 경우.
+    dependencies: [ "questionary", "re" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: select_file_from_directory
+    version: 1.0.0
+    description: 특정 디렉토리의 파일 목록을 보여주고, 사용자가 그중 하나를 선택하게 합니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문 메시지.
+      - name: directory_path
+        type: str
+        description: 파일을 검색할 디렉토리 경로.
+    return_value:
+      type: Optional[str]
+      description: 사용자가 선택한 파일의 전체 경로. 파일이 없거나 취소 시 None.
+    exceptions:
+      - NotADirectoryError: 주어진 directory_path가 디렉토리가 아닐 경우.
+      - FileNotFoundError: 주어진 directory_path가 존재하지 않을 경우.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction", "file_system_read" ]
+
+  - mcp_name: show_diff
+    version: 1.0.0
+    description: 두 텍스트를 비교하여 차이점(diff)을 터미널에 시각적으로 강조하여 보여줍니다.
+    arguments:
+      - name: text1
+        type: str
+        description: 비교할 첫 번째 텍스트 (원본).
+      - name: text2
+        type: str
+        description: 비교할 두 번째 텍스트 (수정본).
+      - name: fromfile
+        type: str
+        optional: true
+        default: '원본'
+        description: 원본 파일명으로 표시될 이름.
+      - name: tofile
+        type: str
+        optional: true
+        default: '수정본'
+        description: 수정본 파일명으로 표시될 이름.
+    return_value:
+      type: None
+      description: 결과를 직접 print() 함수로 터미널에 출력합니다.
+    dependencies: [ "difflib" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
+
+  - mcp_name: prompt_with_autocomplete
+    version: 1.0.0
+    description: 사용자 입력을 시작하면, 제공된 선택지 목록을 기반으로 자동 완성 제안을 보여줍니다.
+    arguments:
+      - name: prompt
+        type: str
+        description: 사용자에게 보여줄 질문.
+      - name: choices
+        type: List[str]
+        description: 자동 완성 제안에 사용할 문자열 리스트.
+    return_value:
+      type: Optional[str]
+      description: 사용자가 선택하거나 입력한 최종 문자열. 취소 시 None.
+    dependencies: [ "questionary" ]
+    cost_tier: low
+    permissions_required: [ "user_interaction" ]
