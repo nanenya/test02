@@ -7,18 +7,33 @@ import uvicorn
 import subprocess
 import time
 import socket
+import os
+import re
 from rich.console import Console
 from rich.table import Table
 from typing_extensions import Annotated
-from typing import List
+from typing import List, Dict, Any
 from orchestrator.history_manager import list_conversations, load_conversation, new_conversation
 
 app = typer.Typer()
 console = Console()
 
 ORCHESTRATOR_URL = "http://127.0.0.1:8000"
+PROMPTS_DIR = "system_prompts"
 
-# --- 새로운 Typer 명령어들 ---
+os.makedirs(PROMPTS_DIR, exist_ok=True)
+default_prompt_path = os.path.join(PROMPTS_DIR, "default.txt")
+if not os.path.exists(default_prompt_path):
+    with open(default_prompt_path, "w", encoding="utf-8") as f:
+        f.write("당신은 유능한 AI 어시스턴트입니다.")
+
+
+# --- (수정) display_full_plan 함수 제거 ---
+# (ReAct 아키텍처에서는 '전체 계획'을 미리 알 수 없으므로 이 기능은 제거됩니다.)
+# def display_full_plan(plan: List[Dict[str, Any]]):
+#     ...
+# -------------------------------------------
+
 
 @app.command()
 def list():
@@ -26,7 +41,7 @@ def list():
     try:
         convos = list_conversations()
         
-        table = Table("ID", "Title", "Last Updated")
+        table = Table("ID (Filename)", "Title", "Last Updated")
         for convo in convos:
             table.add_row(convo['id'], convo['title'], convo['last_updated'])
         console.print(table)
@@ -36,8 +51,10 @@ def list():
 @app.command()
 def run(
     query: Annotated[str, typer.Option("--query", "-q", help="AI 에이전트에게 내릴 새로운 명령어")] = None,
-    continue_id: Annotated[str, typer.Option("--continue", "-c", help="이어갈 대화의 ID")] = None,
+    continue_id: Annotated[str, typer.Option("--continue", "-c", help="이어갈 대화의 ID (파일명)")] = None,
     requirement_paths: Annotated[List[str], typer.Option("--req", "-r", help="참조할 요구사항 파일 경로")] = None,
+    model_pref: Annotated[str, typer.Option("--model-pref", "-m", help="모델 선호도 (auto, standard, high)")] = "auto",
+    system_prompts: Annotated[List[str], typer.Option("--gem", "-g", help="사용할 시스템 프롬프트 (Gem) 이름 (예: default)")] = None,
 ):
     """
     AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다.
@@ -48,24 +65,33 @@ def run(
 
     client = httpx.Client(timeout=120)
     
-    # 대화 시작 또는 이어가기
+    prompt_contents = []
+    if system_prompts:
+        for prompt_name in system_prompts:
+            prompt_file = os.path.join(PROMPTS_DIR, f"{prompt_name}.txt")
+            if os.path.exists(prompt_file):
+                try:
+                    with open(prompt_file, 'r', encoding='utf-8') as f:
+                        prompt_contents.append(f.read())
+                except Exception as e:
+                    console.print(f"[bold yellow]경고: 프롬프트 파일 '{prompt_file}'을 읽을 수 없습니다: {e}[/bold yellow]")
+            else:
+                console.print(f"[bold yellow]경고: 프롬프트 파일 '{prompt_file}'을 찾을 수 없습니다.[/bold yellow]")
+
     if query:
         convo_id, history = new_conversation()
-        console.print(f"🚀 새로운 대화를 시작합니다. (ID: {convo_id})")
+        console.print(f"새로운 대화를 시작합니다. (ID: {convo_id})")
         
-        # (수정 1) query가 옵션으로 들어올 때도 안전하게 처리
-        if query:
-            query = query.encode('utf-8', errors='replace').decode('utf-8')
-            
-        # 새 쿼리는 user_input으로 전달하여 서버가 '계획 수립'을 하도록 함
         request_data = {
             "conversation_id": convo_id, 
             "history": history, 
             "user_input": query, 
-            "requirement_paths": requirement_paths
+            "requirement_paths": requirement_paths,
+            "model_preference": model_pref,
+            "system_prompts": prompt_contents
         }
         endpoint = "/agent/decide_and_act"
-    else: # 대화 이어가기
+    else: 
         convo_id = continue_id
         data = load_conversation(convo_id)
         if not data:
@@ -73,25 +99,22 @@ def run(
             raise typer.Exit()
         
         history = data.get("history", [])
-        console.print(f"🔄 대화를 이어합니다. (ID: {convo_id})")
+        convo_id = data.get("id", convo_id) 
+        console.print(f"대화를 이어합니다. (ID: {convo_id})")
         
-        # 추가 지시사항 받기 (수정 또는 계속)
         user_input = typer.prompt("추가/수정 지시가 있나요? (없으면 Enter 키로 기존 계획 계속)")
         
-        # --- (수정 2) UnicodeEncodeError 방지 ---
-        if user_input:
-            user_input = user_input.encode('utf-8', errors='replace').decode('utf-8')
-        # ------------------------------------
-            
         request_data = {
             "conversation_id": convo_id, 
             "history": history, 
-            "user_input": user_input or None
-            # 요구사항 파일은 최초 실행 시에만 전달
+            "user_input": user_input or None,
+            "model_preference": model_pref,
+            "system_prompts": prompt_contents
         }
         endpoint = "/agent/decide_and_act"
 
     # --- 상호작용 루프 ---
+    
     while True:
         try:
             response = client.post(f"{ORCHESTRATOR_URL}{endpoint}", json=request_data)
@@ -101,40 +124,61 @@ def run(
             status = data.get("status")
             message = data.get("message")
             convo_id = data.get("conversation_id")
-            history = data.get("history") # 항상 최신 히스토리로 업데이트
+            history = data.get("history")
+            # (수정) plan 필드는 더 이상 사용하지 않음
+            # new_plan_data = data.get("plan") 
 
             if status == "FINAL_ANSWER":
-                console.print(f"\n[bold green]✅ 최종 답변:[/bold green]\n{message}")
+                console.print(f"\n[bold green]최종 답변:[/bold green]\n{message}")
                 break
+            
+            # --- (수정) STEP_EXECUTED 상태 처리 ---
+            elif status == "STEP_EXECUTED":
+                console.print(f"[cyan]...{message}[/cyan]")
+                console.print("[cyan]...다음 단계를 계획합니다...[/cyan]")
+                endpoint = "/agent/decide_and_act"
+                request_data = {
+                    "conversation_id": convo_id, 
+                    "history": history, 
+                    "user_input": None, # (중요) Re-plan 트리거
+                    "model_preference": model_pref,
+                    "system_prompts": prompt_contents
+                }
+            # ------------------------------------
 
             elif status == "PLAN_CONFIRMATION":
-                console.print(f"\n[bold yellow]🤔 다음 실행 계획:[/bold yellow]\n{message}")
                 
-                # 사용자 입력 받기
-                action = typer.prompt("승인하시겠습니까? [Y(예)/n(아니오)/edit(수정)]", default="Y").lower()
+                # (수정) ReAct 모델에서는 '전체 계획' 표시 로직 제거
+                # if new_plan_data: ...
                 
+                console.print(f"\n[bold yellow]다음 실행 계획:[/bold yellow]\n{message}")
+                action = typer.prompt("승인하시겠습니까? [Y(예)/n(아니오)/edit(계획 수정)]", default="Y").lower()
+
                 if action in ["y", "yes"]:
                     console.print("[cyan]...승인됨. 계획 그룹을 실행합니다...[/cyan]")
                     endpoint = "/agent/execute_group"
-                    # 서버가 ID를 기반으로 계획을 알고 있으므로 ID와 히스토리만 전달
-                    request_data = {"conversation_id": convo_id, "history": history}
+                    request_data = {
+                        "conversation_id": convo_id, 
+                        "history": history,
+                        "model_preference": model_pref
+                    }
                 elif action == 'edit':
                     edited_instruction = typer.prompt("어떻게 수정할까요? (새로운 계획 수립)")
-                    
-                    # --- (수정 3) UnicodeEncodeError 방지 ---
-                    if edited_instruction:
-                        edited_instruction = edited_instruction.encode('utf-8', errors='replace').decode('utf-8')
-                    # ------------------------------------
                         
                     endpoint = "/agent/decide_and_act"
-                    # user_input을 전달하여 re-planning 트리거
-                    request_data = {"conversation_id": convo_id, "history": history, "user_input": edited_instruction}
+                    request_data = {
+                        "conversation_id": convo_id, 
+                        "history": history, 
+                        "user_input": edited_instruction,
+                        "model_preference": model_pref,
+                        "system_prompts": prompt_contents
+                    }
                 else:
-                    console.print("[bold red]✋ 작업을 중단합니다.[/bold red]")
+                    console.print("[bold red]작업을 중단합니다.[/bold red]")
                     break
             
             elif status == "ERROR":
-                console.print(f"[bold red]❌ 서버 오류: {message}[/bold red]")
+                console.print(f"[bold red]서버 오류: {message}[/bold red]")
                 break
 
         except httpx.RequestError:
@@ -145,10 +189,7 @@ def run(
             break
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
-    """지정된 호스트와 포트가 현재 사용 중인지 확인합니다."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        # connect_ex는 연결 실패 시 에러 코드를 반환하므로 try-except가 필요 없습니다.
-        # 연결에 성공하면 0을 반환하며, 이는 포트가 사용 중임을 의미합니다.
         return s.connect_ex((host, port)) == 0
 
 @app.command(name="server")
@@ -159,37 +200,32 @@ def run_server(
 ):
     """FastAPI 오케스트레이터 서버를 실행합니다."""
 
-    typer.echo(f"🔄 {port}번 포트를 사용하는 기존 프로세스를 확인하고 종료합니다...")
+    typer.echo(f"{port}번 포트를 사용하는 기존 프로세스를 확인하고 종료합니다...")
     try:
-        # fuser -k {port}/tcp: 지정된 TCP 포트를 사용하는 프로세스를 강제 종료(-k)
         subprocess.run(
             ["fuser", "-k", f"{port}/tcp"],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        typer.secho(f"✅ 기존 프로세스를 성공적으로 종료했습니다.", fg=typer.colors.GREEN)
+        typer.secho(f"기존 프로세스를 성공적으로 종료했습니다.", fg=typer.colors.GREEN)
 
-        # --- 핵심 수정 부분 ---
-        # 포트가 해제될 때까지 최대 5초간 대기합니다.
         typer.echo(f"포트가 해제되기를 기다리고 있습니다...")
         max_wait_seconds = 5
         wait_start_time = time.time()
         while is_port_in_use(port, host):
             if time.time() - wait_start_time > max_wait_seconds:
-                typer.secho(f"❌ {max_wait_seconds}초가 지나도 {port}번 포트가 여전히 사용 중입니다. 스크립트를 종료합니다.", fg=typer.colors.RED)
+                typer.secho(f"{max_wait_seconds}초가 지나도 {port}번 포트가 여전히 사용 중입니다. 스크립트를 종료합니다.", fg=typer.colors.RED)
                 raise typer.Exit(code=1)
-            time.sleep(0.5) # 0.5초 간격으로 확인
-        typer.secho(f"✅ 포트가 성공적으로 해제되었습니다.", fg=typer.colors.GREEN)
-        # --------------------
+            time.sleep(0.5) 
+        typer.secho(f"포트가 성공적으로 해제되었습니다.", fg=typer.colors.GREEN)
 
     except FileNotFoundError:
-        typer.secho("⚠️ 'fuser' 명령어를 찾을 수 없습니다. (Linux 시스템 필요). 포트 충돌이 발생할 수 있습니다.", fg=typer.colors.YELLOW)
+        typer.secho("경고: 'fuser' 명령어를 찾을 수 없습니다. (Linux 시스템 필요). 포트 충돌이 발생할 수 있습니다.", fg=typer.colors.YELLOW)
     except subprocess.CalledProcessError:
-        typer.echo(f"ℹ️ {port}번 포트를 사용하는 기존 프로세스가 없습니다. 바로 시작합니다.")
+        typer.echo(f"{port}번 포트를 사용하는 기존 프로세스가 없습니다. 바로 시작합니다.")
 
-    typer.echo(f"🔥 FastAPI 서버 시작: http://{host}:{port}")
-    # uvicorn.run의 첫 번째 인자는 "모듈_이름:FastAPI_앱_인스턴스" 형식이어야 합니다.
+    typer.echo(f"FastAPI 서버 시작: http://{host}:{port}")
     uvicorn.run("orchestrator.api:app", host=host, port=port, reload=reload)
 
 if __name__ == "__main__":
