@@ -1,8 +1,8 @@
-.*
+
 venv/
 .env
 .ssh
 backup/
 history/
 temp/
-
+.pytest_cache/
