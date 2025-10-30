@@ -2,3 +2,7 @@
 venv/
 .env
 .ssh
+backup/
+history/
+temp/
+
