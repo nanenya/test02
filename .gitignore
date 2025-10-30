@@ -1,18 +1,8 @@
-<<<<<<< HEAD
-.env
-.ssh
-venv/
-=======
-
 venv/
 .env
 .ssh
->>>>>>> a2e8a8c7349cbac167a6d7c9f42961c88731ba2e
 backup/
 history/
 temp/
 .pytest_cache/
-<<<<<<< HEAD
 orchestrator/__pycache__/
-=======
->>>>>>> a2e8a8c7349cbac167a6d7c9f42961c88731ba2e
