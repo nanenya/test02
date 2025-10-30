@@ -1,0 +1,97 @@
+{
+  "id": "58a4b459-c6e4-4b3c-9ca7-28719323ba67",
+  "title": "계획 수립: 새로운 'b01' git 브랜치를 생...",
+  "last_updated": "2025-10-27T11:53:43.035210",
+  "history": [
+    "사용자 요청: b01이라는 git branch를 만들고 *_01.py, *_02.py 파일들을 지우고 add commit push까지 해줘"
+  ],
+  "plan": [
+    {
+      "group_id": "group_1",
+      "description": "새로운 'b01' git 브랜치를 생성하고 해당 브랜치로 전환합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_create_branch",
+          "arguments": {
+            "branch_name": "b01"
+          }
+        },
+        {
+          "tool_name": "git_switch_branch",
+          "arguments": {
+            "branch_name": "b01"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_2",
+      "description": "삭제할 대상 파일들을 탐색하고 삭제합니다.",
+      "tasks": [
+        {
+          "tool_name": "find_files",
+          "arguments": {
+            "directory": ".",
+            "pattern": "*_01.py"
+          }
+        },
+        {
+          "tool_name": "find_files",
+          "arguments": {
+            "directory": ".",
+            "pattern": "*_02.py"
+          }
+        },
+        {
+          "tool_name": "execute_shell_command",
+          "arguments": {
+            "command": "find . -type f -name \"*_01.py\" -delete"
+          }
+        },
+        {
+          "tool_name": "execute_shell_command",
+          "arguments": {
+            "command": "find . -type f -name \"*_02.py\" -delete"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_3",
+      "description": "파일 삭제 변경사항을 스테이징하고 커밋합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_add",
+          "arguments": {
+            "repo_path": ".",
+            "files": [
+              "."
+            ]
+          }
+        },
+        {
+          "tool_name": "git_commit",
+          "arguments": {
+            "repo_path": ".",
+            "message": "feat: Remove _01.py and _02.py files"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_4",
+      "description": "새로운 브랜치와 커밋을 원격 저장소에 푸시합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_push",
+          "arguments": {
+            "repo_path": ".",
+            "remote": "origin",
+            "branch": "b01"
+          }
+        }
+      ]
+    }
+  ],
+  "current_group_index": 0
+}

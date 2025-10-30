@@ -1,0 +1,63 @@
+{
+  "id": "5b593cbe-226f-431d-ac01-41d57e0c791c",
+  "title": "계획 수립: 현재 디렉토리의 모든 변경 사항을 G...",
+  "last_updated": "2025-10-27T11:54:46.143205",
+  "history": [
+    "사용자 요청: add commit push까지 해줘"
+  ],
+  "plan": [
+    {
+      "group_id": "group_1",
+      "description": "현재 디렉토리의 모든 변경 사항을 Git 스테이징 영역에 추가합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_add",
+          "arguments": {
+            "repo_path": ".",
+            "files": [
+              "."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_2",
+      "description": "스테이징된 변경 사항에 대한 커밋 메시지를 입력받아 커밋을 생성합니다.",
+      "tasks": [
+        {
+          "tool_name": "ask_for_multiline_input",
+          "arguments": {
+            "prompt": "커밋 메시지를 입력하세요 (종료하려면 새 줄에 EOF 입력):"
+          }
+        },
+        {
+          "tool_name": "git_commit",
+          "arguments": {
+            "repo_path": ".",
+            "message": "{group_2.tasks.0.output}"
+          }
+        }
+      ]
+    },
+    {
+      "group_id": "group_3",
+      "description": "로컬 브랜치의 커밋을 원격 저장소(origin)로 푸시합니다.",
+      "tasks": [
+        {
+          "tool_name": "git_get_current_branch",
+          "arguments": {}
+        },
+        {
+          "tool_name": "git_push",
+          "arguments": {
+            "repo_path": ".",
+            "remote": "origin",
+            "branch": "{group_3.tasks.0.output}"
+          }
+        }
+      ]
+    }
+  ],
+  "current_group_index": 0
+}
