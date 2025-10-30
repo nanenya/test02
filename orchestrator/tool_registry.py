@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# orchestrator/tool_registry.py
 
 import os
 import importlib
@@ -11,16 +13,26 @@ TOOL_DESCRIPTIONS: Dict[str, str] = {}
 
 def load_tools():
     """mcp_modules 디렉토리에서 모든 MCP를 동적으로 로드합니다."""
+    # (수정) 디렉토리가 없을 경우 생성
+    if not os.path.exists(MCP_DIRECTORY):
+        os.makedirs(MCP_DIRECTORY)
+        print(f"경고: '{MCP_DIRECTORY}' 디렉토리가 없어 생성했습니다. 도구가 로드되지 않았습니다.")
+        return
+
     for filename in os.listdir(MCP_DIRECTORY):
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name = f"{MCP_DIRECTORY}.{filename[:-3]}"
-            module = importlib.import_module(module_name)
-            for name, func in inspect.getmembers(module, inspect.isfunction):
-                if not name.startswith("_"):
-                    TOOLS[name] = func
-                    description = func.__doc__.strip() if func.__doc__ else name #f"'{name}' 도구에 대한 설명이 없습니다."
-                    TOOL_DESCRIPTIONS[name] = description # func.__doc__.strip()
-                    print(f"✅ Tool loaded: {name}")
+            try:
+                module = importlib.import_module(module_name)
+                for name, func in inspect.getmembers(module, inspect.isfunction):
+                    if not name.startswith("_"):
+                        TOOLS[name] = func
+                        description = func.__doc__.strip() if func.__doc__ else name 
+                        TOOL_DESCRIPTIONS[name] = description 
+                        print(f"Tool loaded: {name}")
+            except ImportError as e:
+                print(f"모듈 로드 실패: {module_name} ({e})")
+
 
 def get_tool(name: str) -> Callable:
     """이름으로 MCP 함수를 가져옵니다."""
@@ -32,5 +44,5 @@ def get_all_tool_descriptions() -> str:
         f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
     )
 
-# 애플리케이션 시작 시 한 번만 로드
-load_tools()
+# 애플리케이션 시작 시 한 번만 로드 (api.py의 @app.on_event("startup")로 이동됨)
+# load_tools()
