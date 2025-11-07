@@ -146,6 +146,23 @@ async def execute_group(request: AgentRequest):
     plan_list = [ExecutionGroup(**group) for group in plan_dicts]
     group_to_execute = plan_list[current_group_index]
     
+    # -----------------------------------------------------------------
+    # ✨ 1. 이전 실행 결과 수집 (NEW)
+    # -----------------------------------------------------------------
+    # history에서 이전 실행 결과('  - 실행 결과: ...')를 모두 수집합니다.
+    previous_results = []
+    for item in history:
+        if item.startswith("  - 실행 결과: "):
+            # '  - 실행 결과: ' 접두사 제거
+            result_content = item.split(": ", 1)[1]
+            previous_results.append(result_content)
+
+    # 여러 결과를 합쳐야 할 때를 대비해 MERGED_RESULTS를 만듭니다.
+    # 사용자의 요청(파일 코드 모두 담기)에 적합하게 줄바꿈 2개로 결합합니다.
+    merged_results = "\n\n".join(previous_results)
+    last_result = previous_results[-1] if previous_results else ""
+    # -----------------------------------------------------------------
+    
     history.append(f"그룹 실행 시작: [{group_to_execute.group_id}] {group_to_execute.description}")
 
     try:
@@ -158,18 +175,42 @@ async def execute_group(request: AgentRequest):
             # (요청사항 2) 태스크에 지정된 모델 선호도 (현재는 로컬 툴 실행뿐이라 미사용)
             # model_pref_for_task = task.model_preference 
             
-            history.append(f"  - 도구 실행: {task.tool_name} (인자: {task.arguments})")
+            # -----------------------------------------------------------------
+            # ✨ 2. 인자 치환 (ARGUMENT SUBSTITUTION) (MODIFIED)
+            # -----------------------------------------------------------------
+            substituted_args = {}
+            for key, value in task.arguments.items():
+                if isinstance(value, str):
+                    if value == "$MERGED_RESULTS":
+                        substituted_args[key] = merged_results
+                    elif value == "$LAST_RESULT":
+                        substituted_args[key] = last_result
+                    # (필요시 "$PREVIOUS_RESULTS[0]" 등 더 복잡한 치환 로직 추가 가능)
+                    else:
+                        substituted_args[key] = value
+                else:
+                    substituted_args[key] = value
+            # -----------------------------------------------------------------
+            
+            history.append(f"  - 도구 실행: {task.tool_name} (인자: {substituted_args})")
             
             if inspect.iscoroutinefunction(tool_function):
-                result = await tool_function(**task.arguments)
+                result = await tool_function(**substituted_args) # 수정됨
             else:
-                result = tool_function(**task.arguments)
+                result = tool_function(**substituted_args) # 수정됨
             
             result_str = str(result)
-            if len(result_str) > 1000:
-                result_str = result_str[:1000] + "... (결과가 너무 길어 잘림)"
             
+            # -----------------------------------------------------------------
+            # ✨ 3. 결과 잘림(TRUNCATION) 제거 (MODIFIED)
+            # -----------------------------------------------------------------
+            # 원본:
+            # if len(result_str) > 1000:
+            #     result_str = result_str[:1000] + "... (결과가 너무 길어 잘림)"
+            
+            # history에 '전체' 결과 저장
             history.append(f"  - 실행 결과: {result_str}")
+            # -----------------------------------------------------------------
         
         history.append(f"그룹 실행 완료: [{group_to_execute.group_id}]")
         current_group_index += 1
