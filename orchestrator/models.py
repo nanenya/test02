@@ -13,6 +13,8 @@ class AgentRequest(BaseModel):
     requirement_paths: List[str] | None = None
     model_preference: str = "auto" # (요청사항 1)
     system_prompts: List[str] | None = None # (요청사항 4)
+    # (신규) 위험 작업에 대한 사용자 결정 추가
+    user_decision: Literal["proceed", "create_mcp", "abort"] | None = None
 
 class GeminiToolCall(BaseModel):
     """단일 도구 호출(MCP)을 정의하는 모델"""
@@ -34,8 +36,17 @@ class ExecutionGroup(BaseModel):
 class AgentResponse(BaseModel):
     """서버가 CLI로 보내는 응답 모델"""
     conversation_id: str
-    status: Literal["PLAN_CONFIRMATION", "FINAL_ANSWER", "ERROR"]
+    # (수정) status 리터럴 확장
+    status: Literal[
+        "PLAN_CONFIRMATION", 
+        "DANGEROUS_TASK_CONFIRMATION", # (신규) 위험 작업 확인
+        "EXECUTION_ERROR",             # (신규) 실행 오류
+        "FINAL_ANSWER", 
+        "ERROR"                        # (유지) 계획 수립 등 치명적 오류
+    ]
     history: List[str]
     message: str 
     execution_group: ExecutionGroup | None = None # 다음 1개 그룹 확인용
     plan: List[ExecutionGroup] | None = None # (요청사항 2) 전체 계획 확인용
+    # (신규) 위험 작업 원본 코드를 CLI로 전달
+    dangerous_task_details: Dict[str, Any] | None = None

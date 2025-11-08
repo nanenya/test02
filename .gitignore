@@ -5,6 +5,7 @@ venv/
 backup/
 history/
 temp/
+__pycache__/
 .pytest_cache/
 orchestrator/__pycache__/
 todo/

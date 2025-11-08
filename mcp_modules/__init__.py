@@ -16,5 +16,11 @@ from .code_execution_composite import run_python_script, install_python_package,
 
 from .web_network_atomic import fetch_url_content, download_file_from_url, api_get_request, api_post_request, api_put_request, api_delete_request, get_http_status, ping_host, resolve_dns, parse_rss_feed, send_email_smtp, get_http_headers, get_ssl_certificate_info, fetch_dynamic_content, ftp_upload_file, ftp_download_file
 
-from .git_version_control import git_init, git_clone, git_status, git_add, git_commit, git_push, git_pull, git_fetch, git_create_branch, git_switch_branch, git_list_branches, git_merge, git_log, git_diff, git_add_remote, git_create_tag, git_list_tags, git_revert_commit, git_show_commit_details, git_get_current_branch
-
+# AI가 Git 도구를 인식하고 사용할 수 있도록 __init__.py에 추가합니다.
+from .git_version_control import (
+    git_init, git_clone, git_status, git_add, git_commit, git_push, git_pull, 
+    git_fetch, git_create_branch, git_switch_branch, git_list_branches, 
+    git_merge, git_log, git_diff, git_add_remote, git_create_tag, 
+    git_list_tags, git_revert_commit, git_show_commit_details, 
+    git_get_current_branch
+)
