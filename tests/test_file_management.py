@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 
 # 테스트 대상 함수 임포트
-from .file_management import (
+from mcp_modules.file_management import (
     create_directory,
     list_directory,
     rename,

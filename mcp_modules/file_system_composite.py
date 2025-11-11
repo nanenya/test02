@@ -13,6 +13,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Dict, List, Union
+from .file_content_operations import read_file
 
 # --- 로거 설정 ---
 logging.basicConfig(
@@ -415,3 +416,36 @@ def delete_directory_recursively(path: Union[str, Path]) -> str:
     except Exception as e:
         logger.critical(f"Unexpected error while deleting {path}: {e}")
         raise
+
+def read_multiple_files(file_paths: List[str]) -> str:
+    """
+    여러 개의 텍스트 파일 경로를 리스트로 받아,
+    각 파일의 내용을 읽어 하나의 문자열로 결합합니다.
+    AI가 코드베이스 전체를 분석할 때 유용합니다.
+
+    Args:
+        file_paths (List[str]): 읽어올 파일들의 경로 리스트.
+
+    Returns:
+        str: 각 파일의 내용이 파일명 헤더와 함께 결합된 단일 문자열.
+
+    Raises:
+        FileNotFoundError: 리스트의 파일 중 하나라도 존재하지 않으면 발생.
+        IOError: 파일 읽기 중 오류 발생 시.
+    """
+    logger.info(f"{len(file_paths)}개의 파일 내용을 읽기 시작합니다.")
+    combined_content = ""
+
+    # AI가 파일 맥락을 구분할 수 있도록 파일명 헤더를 추가합니다.
+    for file_path in file_paths:
+        try:
+            content = read_file(file_path) # 기존 Atomic MCP 재사용
+            combined_content += f"\n--- START OF {file_path} ---\n"
+            combined_content += content
+            combined_content += f"\n--- END OF {file_path} ---\n"
+        except Exception as e:
+            logger.warning(f"'{file_path}' 파일 읽기 실패: {e}. 건너뜁니다.")
+            combined_content += f"\n--- FAILED TO READ {file_path}: {e} ---\n"
+
+    logger.info("모든 파일 읽기 및 결합 완료.")
+    return combined_content

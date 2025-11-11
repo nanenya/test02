@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 
-from .file_attributes import (
+from mcp_modules.file_attributes import (
     path_exists,
     is_file,
     is_directory,

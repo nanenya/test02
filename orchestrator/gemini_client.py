@@ -15,7 +15,6 @@ from pathlib import Path
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# ... (기존 모델 설정 및 get_model 함수) ...
 HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-1.5-pro-latest")
 STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-1.5-flash-latest")
 ModelPreference = Literal["auto", "standard", "high"]
@@ -52,7 +51,6 @@ def get_model(
         return high_perf_model if needs_json else genai.GenerativeModel(HIGH_PERF_MODEL_NAME)
     else: 
         return standard_model_json if needs_json else standard_model
-# ... (여기까지 기존과 동일) ...
 
 
 async def generate_execution_plan(
@@ -132,7 +130,6 @@ async def generate_execution_plan(
 
     try:
         response = await model_to_use.generate_content_async(prompt)
-        # (신규) AI가 생성한 JSON에서 불필요한 마크다운 래퍼 제거 (예: ```json ... ```)
         cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
         
         parsed_json = json.loads(cleaned_text)
@@ -147,7 +144,7 @@ async def generate_execution_plan(
         print(f"Planner 모델 호출 오류: {e}")
         raise e
 
-# (신규) 요청사항 1, 2: 신규 MCP 생성을 위한 함수
+# (수정) f-string 내부의 중괄호를 {{}}로 이스케이프
 async def generate_new_mcp_code(
     user_instruction: str,
     history: list,
@@ -156,19 +153,35 @@ async def generate_new_mcp_code(
     """
     'Agent Developer' 페르소나를 사용하여, 기존 MCP 스타일을 따른
     새로운 MCP 모듈 코드를 생성합니다. (RAG 활용)
+    (수정) RAG 성능 향상을 위해 여러 스타일 가이드 파일을 참조합니다.
     """
     
-    # 고성능 모델 (텍스트 생성용, non-JSON)
     model_to_use = get_model(model_preference, default_type="high", needs_json=False)
 
-    # RAG: 기존 MCP 파일 중 하나를 '스타일 가이드'로 읽어옵니다.
-    style_guide_path = Path(MCP_DIRECTORY) / "file_content_operations.py"
+    # (수정) 단일 파일 대신 다양한 예시 파일을 스타일 가이드로 로드
+    style_guide_files = [
+        "file_content_operations.py", # 파일 I/O 예시
+        "code_execution_atomic.py",   # 코드/셸 실행 예시
+        "web_network_atomic.py"       # 네트워크 작업 예시
+    ]
     style_guide_code = ""
-    try:
-        if style_guide_path.exists():
-            style_guide_code = style_guide_path.read_text(encoding='utf-8')
-    except Exception as e:
-        logging.warning(f"MCP 스타일 가이드 로드 실패: {e}")
+
+    for file_name in style_guide_files:
+        style_guide_path = Path(MCP_DIRECTORY) / file_name
+        try:
+            if style_guide_path.exists():
+                header = f"\n# --- 예시: {file_name} ---\n"
+                code = style_guide_path.read_text(encoding='utf-8')
+                # f-string 이스케이프 처리
+                code = code.replace("{", "{{").replace("}", "}}")
+                style_guide_code += header + code
+            else:
+                logging.warning(f"MCP 스타일 가이드 파일을 찾을 수 없음: {file_name}")
+        except Exception as e:
+            logging.warning(f"MCP 스타일 가이드 로드 실패 ({file_name}): {e}")
+
+    if not style_guide_code:
+        style_guide_code = "# (스타일 가이드 로드 실패. 기본 Python 스타일, logging, pathlib, typing을 사용하세요.)"
 
     formatted_history = "\n".join(history[-10:]) 
 
@@ -191,66 +204,39 @@ async def generate_new_mcp_code(
     - 명확한 Docstring을 포함해야 합니다. (Planner가 인식하는 데 필수)
     - 강력한 예외 처리(try...except, raise)를 포함해야 합니다.
 
-    ## 예시 코드 (file_content_operations.py):
+    ## 예시 코드 (다중 파일 스타일 가이드):
     ```python
-    #!/usr/bin/env python3
-    # -*- coding: utf-8 -*-
-    import logging
-    from pathlib import Path
-    from typing import Union, List, ByteString
-
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-
-    def _prepare_write_path(path: Union[str, Path]) -> Path:
-        # ... (헬퍼 함수 예시) ...
-        p = Path(path).resolve()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        return p
-
-    def read_file(path: Union[str, Path], encoding: str = 'utf-8') -> str:
-        \"\"\"지정된 경로의 텍스트 파일 내용을 전부 읽어 문자열로 반환합니다.
-        (Docstring 예시)
-        \"\"\"
-        logger.info(f"Attempting to read text file: {path}")
-        try:
-            p = Path(path).resolve(strict=True)
-            if not p.is_file():
-                raise IsADirectoryError(f"해당 경로는 파일이 아닙니다: {p}")
-            return p.read_text(encoding=encoding)
-        except FileNotFoundError as e:
-            logger.error(f"Failed to read file {path}: {e}")
-            raise
+    {style_guide_code}
     ```
 
     ## 지시사항:
     사용자의 요청({user_instruction})을 해결할 수 있는 **단일 Python 함수**를 포함한 **완전한 MCP 모듈 파일 코드**를 생성하세요.
     - 다른 설명이나 대답, 마크다운 래퍼 없이 **오직 Python 코드**만 반환하세요.
-    - 함수 이름은 작업 내용에 맞게 명확하게 (예: `combine_files`, `analyze_code_dependencies`) 지어주세요.
-    
-    # --- (*** 여기 ***) ---
-    # (수정) f-string 오류를 피하기 위해 이중 중괄호 사용
-    - 로그에서 실패한 `{{file_paths = $LAST_RESULT}}`와 같은 코드가 있다면, `file_paths: List[str]`를 인자로 받는 함수로 만들어야 합니다.
-    # -----------------------
+    - 함수 이름은 작업 내용에 맞게 명확하게 (예: `show_and_confirm_changes`) 지어주세요.
+    - 로그에서 실패한 `{{"file_paths = $LAST_RESULT"}}`와 같은 코드가 있다면, `file_paths: List[str]`를 인자로 받는 함수로 만들어야 합니다.
 
     ## 신규 MCP 모듈 코드:
     """
 
     try:
         response = await model_to_use.generate_content_async(prompt)
-        return response.text.strip()
+        # (신규) AI가 반환한 코드에서 마크다운 래퍼 제거
+        code_content = response.text.strip()
+        if code_content.startswith("```python"):
+            code_content = code_content[9:]
+        if code_content.endswith("```"):
+            code_content = code_content[:-3]
+        return code_content.strip()
     except Exception as e:
         logging.error(f"MCP 생성 AI 호출 실패: {e}")
         raise
 
-# ... (기존 generate_final_answer, generate_title_for_conversation 함수) ...
 async def generate_final_answer(
     history: list, 
     model_preference: ModelPreference = "auto"
 ) -> str:
-    # ... (기존 코드와 동일) ...
     model_to_use = get_model(model_preference, default_type="standard", needs_json=False)
-    # ... (기존 프롬프트 및 로직) ...
+    
     if len(history) > 15:
         truncated_history_list = history[:2] + ["... (중간 기록 생략) ..."] + history[-13:]
         history_str = '\n'.join(truncated_history_list)
@@ -282,7 +268,6 @@ async def generate_title_for_conversation(
     history: list, 
     model_preference: ModelPreference = "auto"
 ) -> str:
-    # ... (기존 코드와 동일) ...
     model_to_use = get_model(model_preference, default_type="standard", needs_json=False)
     if len(history) < 2:
         return "새로운_대화"

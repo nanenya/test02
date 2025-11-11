@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 # 테스트 대상 모듈 임포트
-from . import code_execution_atomic as mcp
+from mcp_modules import code_execution_atomic as mcp
 
 # --- 테스트를 위한 Fixture 설정 ---
 @pytest.fixture

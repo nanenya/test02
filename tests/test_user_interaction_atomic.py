@@ -15,7 +15,7 @@ import pytest
 from rich.prompt import Confirm, Prompt
 from rich.console import Console
 
-from .user_interaction_atomic import (
+from mcp_modules.user_interaction_atomic import (
     ask_for_multiline_input,
     ask_for_password,
     ask_user_for_confirmation,

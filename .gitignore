@@ -8,4 +8,6 @@ temp/
 __pycache__/
 .pytest_cache/
 orchestrator/__pycache__/
+mcp_modules/__pycache__/
+tests/__pycache__/
 todo/

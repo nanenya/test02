@@ -18,7 +18,7 @@ import ssl
 from ftplib import FTP_TLS
 
 # 테스트 대상 모듈 임포트
-from . import web_network_atomic
+from mcp_modules import web_network_atomic
 
 # --- _validate_and_sanitize_url 테스트 ---
 def test_validate_url_success():

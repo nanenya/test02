@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # 테스트 대상 모듈 임포트
-from .code_execution_composite import (
+from mcp_modules.code_execution_composite import (
     build_docker_image,
     clone_git_repository,
     format_code_file,

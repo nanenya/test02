@@ -13,7 +13,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 # 테스트 대상 모듈 임포트
-from . import user_interaction_composite as ui
+from mcp_modules import user_interaction_composite as ui
 
 # --- Fixtures ---
 

@@ -8,7 +8,7 @@ import os
 import shutil
 
 # 테스트 대상 모듈 임포트
-from .file_system_composite import (
+from mcp_modules.file_system_composite import (
     move,
     copy_directory,
     find_files,

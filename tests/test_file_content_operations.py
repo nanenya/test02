@@ -4,7 +4,7 @@
 
 import pytest
 from pathlib import Path
-from .file_content_operations import (
+from mcp_modules.file_content_operations import (
     read_file,
     read_binary_file,
     write_file,

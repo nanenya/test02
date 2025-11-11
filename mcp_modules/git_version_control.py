@@ -55,46 +55,8 @@ def _is_valid_commit_hash(hash_str: str) -> bool:
     """ commit 해시가 유효한 형식인지 검사합니다. (40자리의 16진수 문자열) """
     return bool(re.match(r'^[0-9a-f]{7,40}$', hash_str))
 
-def _run_git_command(command: List[str]) -> str:
-    """
-    지정된 Git 명령어를 안전하게 실행하고 결과를 반환하는 중앙 함수.
-
-    Args:
-        command (List[str]): 'git'으로 시작하는 명령어와 인자 리스트.
-
-    Returns:
-        str: 명령어 실행 성공 시 표준 출력(stdout) 결과.
-
-    Raises:
-        subprocess.CalledProcessError: Git 명령어 실행 실패 시 발생.
-        FileNotFoundError: 'git' 실행 파일을 찾을 수 없을 때 발생.
-    """
-    try:
-        logger.info(f"실행할 Git 명령어: {' '.join(command)}")
-        # shell=False 와 인자 리스트 전달로 셸 주입 공격을 방지합니다.
-        # text=True: stdout/stderr를 텍스트로 디코딩합니다.
-        # check=True: 리턴 코드가 0이 아닐 경우 CalledProcessError를 발생시킵니다.
-        result = subprocess.run(
-            command, cwd=cwd, check=True, text=True, encoding='utf-8',
-            stdout=subprocess.PIPE,  # 표준 출력을 받기 위해 설정
-            stderr=subprocess.PIPE   # 표준 에러를 받기 위해 설정
-        )
-        logger.info(f"명령어 실행 성공. stdout 길이: {len(result.stdout)}")
-        # stdout과 stderr에 내용이 모두 있을 수 있으므로 합쳐서 반환
-        output = result.stdout.strip()
-        error_output = result.stderr.strip()
-        return f"{output}\n{error_output}".strip()
-    except FileNotFoundError:
-        logger.error("'git' 명령어를 찾을 수 없습니다. 시스템에 Git이 설치되어 있는지 확인하세요.")
-        raise
-    except subprocess.CalledProcessError as e:
-        # Git 명령어 실패 시, 에러 내용을 로그에 상세히 기록합니다.
-        logger.error(f"Git 명령어 실행 실패: {' '.join(command)}")
-        logger.error(f"Return Code: {e.returncode}")
-        logger.error(f"Stdout: {e.stdout.strip()}")
-        logger.error(f"Stderr: {e.stderr.strip()}")
-        # 에러를 다시 발생시켜 호출한 쪽에서 처리할 수 있도록 합니다.
-        raise
+# (수정) 중복된 _run_git_command 함수 1개 삭제
+# def _run_git_command(command: List[str]) -> str: ... (삭제됨)
 
 def _run_git_command(command: List[str], cwd: str) -> str:
     """
@@ -402,11 +364,13 @@ def git_fetch(repo_path: str, remote: str = "origin") -> str:
     logger.info(f"성공적으로 '{remote}'에서 페치(fetch)했습니다.")
     return result
 
-def git_create_branch(branch_name: str, cwd: str = "."):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_create_branch(repo_path: str, branch_name: str):
     """
-    새로운 로컬 브랜치를 생성합니다.
+    지정된 저장소에 새로운 로컬 브랜치를 생성합니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         branch_name (str): 생성할 브랜치의 이름.
 
     Raises:
@@ -414,19 +378,21 @@ def git_create_branch(branch_name: str, cwd: str = "."):
         subprocess.CalledProcessError: Git 명령어 실행에 실패했을 때 발생합니다.
 
     Example:
-        >>> git_create_branch("feature/new-login-page")
+        >>> git_create_branch("./my-repo", "feature/new-login-page")
     """
     if not _is_valid_git_ref_name(branch_name):
         raise ValueError(f"유효하지 않은 브랜치 이름입니다: '{branch_name}'")
-    _run_git_command(["git", "branch", branch_name], cwd=cwd)
+    _run_git_command(["git", "branch", branch_name], cwd=repo_path)
     logger.info(f"성공적으로 브랜치를 생성했습니다: {branch_name}")
 
 
-def git_switch_branch(branch_name: str, cwd: str = "."):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_switch_branch(repo_path: str, branch_name: str):
     """
-    지정된 브랜치로 전환합니다. (git switch 사용)
+    지정된 저장소의 브랜치로 전환합니다. (git switch 사용)
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         branch_name (str): 전환할 브랜치의 이름.
 
     Raises:
@@ -434,31 +400,36 @@ def git_switch_branch(branch_name: str, cwd: str = "."):
         subprocess.CalledProcessError: 존재하지 않는 브랜치 등으로 전환에 실패했을 때 발생합니다.
 
     Example:
-        >>> git_switch_branch("main")
+        >>> git_switch_branch("./my-repo", "main")
     """
     if not _is_valid_git_ref_name(branch_name):
         raise ValueError(f"유효하지 않은 브랜치 이름입니다: '{branch_name}'")
-    _run_git_command(["git", "switch", branch_name], cwd=cwd)
+    _run_git_command(["git", "switch", branch_name], cwd=repo_path)
     logger.info(f"성공적으로 브랜치를 전환했습니다: {branch_name}")
 
 
-def git_list_branches(cwd: str = ".") -> List[str]:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_list_branches(repo_path: str) -> List[str]:
     """
-    로컬 및 원격 브랜치 목록을 반환합니다.
+    지정된 저장소의 로컬 및 원격 브랜치 목록을 반환합니다.
+
+    Args:
+        repo_path (str): 대상 Git 저장소의 경로.
 
     Returns:
         List[str]: 모든 브랜치 이름의 리스트. 현재 활성화된 브랜치는 이름 앞에 '*'가 붙습니다.
 
     Example:
-        >>> branches = git_list_branches()
+        >>> branches = git_list_branches("./my-repo")
         >>> print(branches)
         ['* main', 'develop', 'remotes/origin/main']
     """
-    output = _run_git_command(["git", "branch", "-a"], cwd=cwd)
+    output = _run_git_command(["git", "branch", "-a"], cwd=repo_path)
     return [line.strip() for line in output.split('\n') if line]
 
 
-def git_merge(branch_to_merge: str, cwd: str = "."):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_merge(repo_path: str, branch_to_merge: str):
     """
     다른 브랜치의 변경 사항을 현재 브랜치로 병합(merge)합니다.
 
@@ -467,6 +438,7 @@ def git_merge(branch_to_merge: str, cwd: str = "."):
     충돌(conflict) 발생 시, 명령어는 실패하며 사용자가 직접 해결해야 합니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         branch_to_merge (str): 현재 브랜치로 병합할 대상 브랜치의 이름.
 
     Raises:
@@ -474,20 +446,22 @@ def git_merge(branch_to_merge: str, cwd: str = "."):
         subprocess.CalledProcessError: 병합 중 충돌이 발생하거나 다른 문제가 생겼을 때 발생합니다.
 
     Example:
-        >>> git_merge("develop")
+        >>> git_merge("./my-repo", "develop")
     """
     if not _is_valid_git_ref_name(branch_to_merge):
         raise ValueError(f"유효하지 않은 브랜치 이름입니다: '{branch_to_merge}'")
     logger.warning(f"'{branch_to_merge}' 브랜치를 현재 브랜치로 병합합니다. 작업 디렉토리가 변경될 수 있습니다.")
-    _run_git_command(["git", "merge", branch_to_merge], cwd=cwd)
+    _run_git_command(["git", "merge", branch_to_merge], cwd=repo_path)
     logger.info(f"성공적으로 브랜치를 병합했습니다: {branch_to_merge}")
 
 
-def git_log(limit: int = 10, cwd: str = ".") -> str:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_log(repo_path: str, limit: int = 10) -> str:
     """
     최근 커밋 기록을 지정된 수만큼 보여줍니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         limit (int, optional): 가져올 커밋의 최대 개수. 기본값은 10입니다.
 
     Returns:
@@ -497,18 +471,20 @@ def git_log(limit: int = 10, cwd: str = ".") -> str:
         ValueError: limit이 0 이하의 정수가 아닐 경우 발생합니다.
 
     Example:
-        >>> print(git_log(5))
+        >>> print(git_log("./my-repo", 5))
     """
     if not isinstance(limit, int) or limit <= 0:
         raise ValueError("limit은 0보다 큰 정수여야 합니다.")
-    return _run_git_command(["git", "log", f"-n{limit}", "--oneline"], cwd=cwd)
+    return _run_git_command(["git", "log", f"-n{limit}", "--oneline"], cwd=repo_path)
 
 
-def git_diff(file: Optional[str] = None) -> str:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_diff(repo_path: str, file: Optional[str] = None) -> str:
     """
     변경되었지만 아직 스테이징되지 않은 내용의 차이를 보여줍니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         file (Optional[str], optional): 특정 파일의 변경 내용만 보려면 파일 경로를 지정합니다.
                                       None이면 모든 변경 내용을 보여줍니다. 기본값은 None입니다.
 
@@ -518,14 +494,16 @@ def git_diff(file: Optional[str] = None) -> str:
     command = ["git", "diff"]
     if file:
         command.append(file)
-    return _run_git_command(command)
+    return _run_git_command(command, cwd=repo_path)
 
 
-def git_add_remote(name: str, url: str):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_add_remote(repo_path: str, name: str, url: str):
     """
     새로운 원격 저장소 주소를 추가합니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         name (str): 원격 저장소의 별칭 (예: 'origin', 'upstream').
         url (str): 원격 저장소의 URL.
 
@@ -533,22 +511,24 @@ def git_add_remote(name: str, url: str):
         ValueError: 원격 저장소 이름이나 URL이 유효하지 않을 때 발생합니다.
 
     Example:
-        >>> git_add_remote("upstream", "https://github.com/some/repo.git")
+        >>> git_add_remote("./my-repo", "upstream", "https://github.com/some/repo.git")
     """
     if not _is_valid_git_ref_name(name):
         raise ValueError(f"유효하지 않은 원격 저장소 이름입니다: '{name}'")
     # URL에 대한 간단한 검증 (http로 시작하는지)
     if not url.startswith(('http://', 'https://', 'git@')):
         raise ValueError(f"유효하지 않은 URL 형식입니다: '{url}'")
-    _run_git_command(["git", "remote", "add", name, url])
+    _run_git_command(["git", "remote", "add", name, url], cwd=repo_path)
     logger.info(f"성공적으로 원격 저장소를 추가했습니다: {name} -> {url}")
 
 
-def git_create_tag(tag_name: str, message: str):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_create_tag(repo_path: str, tag_name: str, message: str):
     """
     현재 커밋에 주석(annotated) 태그를 생성합니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         tag_name (str): 생성할 태그의 이름 (예: 'v1.0.0').
         message (str): 태그에 대한 설명 메시지.
 
@@ -556,26 +536,31 @@ def git_create_tag(tag_name: str, message: str):
         ValueError: 태그 이름이 유효하지 않은 형식일 때 발생합니다.
 
     Example:
-        >>> git_create_tag("v1.0.1", "Release version 1.0.1")
+        >>> git_create_tag("./my-repo", "v1.0.1", "Release version 1.0.1")
     """
     if not _is_valid_git_ref_name(tag_name):
         raise ValueError(f"유효하지 않은 태그 이름입니다: '{tag_name}'")
-    _run_git_command(["git", "tag", "-a", tag_name, "-m", message], cwd=cwd)
+    _run_git_command(["git", "tag", "-a", tag_name, "-m", message], cwd=repo_path)
     logger.info(f"성공적으로 태그를 생성했습니다: {tag_name}")
 
 
-def git_list_tags() -> List[str]:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_list_tags(repo_path: str) -> List[str]:
     """
     저장소에 존재하는 모든 태그의 목록을 반환합니다.
+
+    Args:
+        repo_path (str): 대상 Git 저장소의 경로.
 
     Returns:
         List[str]: 태그 이름의 리스트.
     """
-    output = _run_git_command(["git", "tag"], cwd=cwd)
+    output = _run_git_command(["git", "tag"], cwd=repo_path)
     return [line.strip() for line in output.split('\n') if line]
 
 
-def git_revert_commit(commit_hash: str, cwd: str = "."):
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_revert_commit(repo_path: str, commit_hash: str):
     """
     특정 커밋에서 발생한 변경 사항을 되돌리는 새로운 커밋을 생성합니다.
 
@@ -583,6 +568,7 @@ def git_revert_commit(commit_hash: str, cwd: str = "."):
     히스토리를 직접 수정하지는 않지만, 현재 브랜치에 새로운 커밋이 추가됩니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         commit_hash (str): 되돌릴 대상 커밋의 해시.
 
     Raises:
@@ -593,15 +579,17 @@ def git_revert_commit(commit_hash: str, cwd: str = "."):
         raise ValueError(f"유효하지 않은 커밋 해시 형식입니다: '{commit_hash}'")
     logger.warning(f"커밋 '{commit_hash}'의 변경 사항을 되돌리는 새로운 커밋을 생성합니다.")
     # --no-edit 옵션으로 revert 커밋 메시지를 자동으로 생성하도록 합니다.
-    _run_git_command(["git", "revert", "--no-edit", commit_hash], cwd=cwd)
+    _run_git_command(["git", "revert", "--no-edit", commit_hash], cwd=repo_path)
     logger.info(f"성공적으로 커밋을 되돌렸습니다: {commit_hash}")
 
 
-def git_show_commit_details(commit_hash: str, cwd: str = ".") -> str:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_show_commit_details(repo_path: str, commit_hash: str) -> str:
     """
     특정 커밋의 상세 정보와 변경된 내용(diff)을 보여줍니다.
 
     Args:
+        repo_path (str): 대상 Git 저장소의 경로.
         commit_hash (str): 조회할 커밋의 해시.
 
     Returns:
@@ -612,15 +600,52 @@ def git_show_commit_details(commit_hash: str, cwd: str = ".") -> str:
     """
     if not _is_valid_commit_hash(commit_hash):
         raise ValueError(f"유효하지 않은 커밋 해시 형식입니다: '{commit_hash}'")
-    return _run_git_command(["git", "show", commit_hash], cwd=cwd)
+    return _run_git_command(["git", "show", commit_hash], cwd=repo_path)
 
 
-def git_get_current_branch(cwd: str = ".") -> str:
+# (수정) 일관성을 위해 cwd: str = "." 대신 repo_path: str 를 사용하도록 변경
+def git_get_current_branch(repo_path: str) -> str:
     """
     현재 작업 중인 브랜치의 이름을 반환합니다.
+
+    Args:
+        repo_path (str): 대상 Git 저장소의 경로.
 
     Returns:
         str: 현재 브랜치의 이름. detached HEAD 상태인 경우, 해당 상태임을 알리는 메시지를 반환할 수 있습니다.
     """
     # 'git branch --show-current'는 detached HEAD 상태에서 빈 값을 반환합니다.
-    return _run_git_command(["git", "branch", "--show-current"], cwd=cwd)
+    return _run_git_command(["git", "branch", "--show-current"], cwd=repo_path)
+
+def git_list_all_files(repo_path: str) -> List[str]:
+    """
+    '.gitignore'와 'exclude' 규칙을 모두 반영하여,
+    tracked, untracked 파일을 포함한 모든 작업 디렉토리의 파일 목록을 반환합니다.
+    'git ls-files --cached --others --exclude-standard' 명령을 안전하게 실행합니다.
+    AI가 코드베이스 전체를 로드할 때 유용합니다.
+
+    Args:
+        repo_path (str): 대상 Git 저장소의 경로.
+
+    Returns:
+        List[str]: .gitignore에 의해 무시되지 않는 모든 파일의 상대 경로 리스트.
+
+    Raises:
+        GitCommandError: 'git ls-files' 명령어 실행 실패 시 발생합니다.
+    """
+    logger.info(f"'{repo_path}'에서 .gitignore를 반영한 모든 파일 목록을 조회합니다.")
+    # --cached: tracked files
+    # --others: untracked files
+    # --exclude-standard: .gitignore, .git/info/exclude 등을 모두 적용
+    command = ['git', 'ls-files', '--cached', '--others', '--exclude-standard']
+    try:
+        output = _run_git_command(command, cwd=repo_path)
+        files = output.split('\n')
+        # 빈 줄이나 예외 경로(예: .git)가 포함될 경우를 대비해 필터링
+        return [f for f in files if f.strip() and not f.startswith('.git/')]
+    except GitCommandError as e:
+        logger.error(f"git ls-files 실행 실패: {e.stderr}")
+        raise
+    except Exception as e:
+        logger.error(f"파일 목록 조회 중 예기치 않은 오류: {e}")
+        raise GitCommandError(f"파일 목록 조회 중 예기치 않은 오류: {e}")

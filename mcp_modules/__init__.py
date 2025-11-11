@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+MCP 모듈 패키지의 메인 __init__ 파일.
+모든 하위 MCP 모듈의 핵심 함수들을 임포트합니다.
+"""
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _safe_import(module_name, elements):
+    """모듈 임포트 실패 시 경고만 하고 넘어가기 위한 헬퍼 함수"""
+    try:
+        module = __import__(module_name, globals(), locals(), elements, 1)
+        for element in elements:
+            globals()[element] = getattr(module, element)
+    except ImportError as e:
+        logger.warning(f"모듈 로드 실패: {module_name} ({e})")
 
 from .file_content_operations import read_file, read_binary_file, write_file, write_binary_file, append_to_file
 
 from .file_management import create_directory, list_directory, rename, delete_file, delete_empty_directory
 
-from .file_system_composite import move, copy_directory, find_files, find_text_in_files, find_large_files, read_specific_lines, replace_text_in_file, get_directory_size, batch_rename, delete_directory_recursively
+from .file_system_composite import move, copy_directory, find_files, find_text_in_files, find_large_files, read_specific_lines, replace_text_in_file, get_directory_size, batch_rename, delete_directory_recursively, read_multiple_files
 
 from .user_interaction_atomic import ask_user_for_input, ask_for_multiline_input, ask_user_for_confirmation, ask_for_password, show_message, display_table, show_progress_bar, clear_screen, show_alert, render_markdown, show_spinner, update_last_line
 
@@ -22,5 +40,24 @@ from .git_version_control import (
     git_fetch, git_create_branch, git_switch_branch, git_list_branches, 
     git_merge, git_log, git_diff, git_add_remote, git_create_tag, 
     git_list_tags, git_revert_commit, git_show_commit_details, 
-    git_get_current_branch
+    git_get_current_branch, git_list_all_files
 )
+
+_safe_import("project_workflows", [
+    "initialize_project_repository",
+    "start_new_feature_branch",
+    "commit_and_push_changes",
+    "analyze_and_lint_project",
+    "revert_last_ai_commit",
+    "load_and_analyze_project_code",
+    "switch_to_main_and_pull",
+    "publish_new_version_tag",
+    "run_project_tests",
+    "request_ai_code_review",
+    "clean_up_merged_branches"
+])
+# --- 오류 로그에 나타난 추가 모듈 (안전하게 임포트) ---
+_safe_import("file_attributes", [])
+_safe_import("mcp_custom_tool", [])
+_safe_import("create_code_bundle", [])
+
