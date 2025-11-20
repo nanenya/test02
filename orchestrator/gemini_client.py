@@ -7,10 +7,14 @@ import os
 import json
 import logging 
 from dotenv import load_dotenv
-from .tool_registry import get_all_tool_descriptions, MCP_DIRECTORY
-from .models import GeminiToolCall, ExecutionGroup
 from typing import List, Dict, Any, Literal
 from pathlib import Path
+
+# [신규] 프롬프트 매니저 도입
+from shared.prompt_manager import prompt_manager
+
+from .tool_registry import get_all_tool_descriptions, MCP_DIRECTORY
+from .models import GeminiToolCall, ExecutionGroup
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -19,6 +23,10 @@ HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-1.5-pro-lates
 STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-1.5-flash-latest")
 ModelPreference = Literal["auto", "standard", "high"]
 
+# 로거 설정
+logger = logging.getLogger(__name__)
+
+# 모델 초기화
 try:
     high_perf_model = genai.GenerativeModel(
         HIGH_PERF_MODEL_NAME,
@@ -30,7 +38,7 @@ try:
         generation_config={"response_mime_type": "application/json"}
     )
 except Exception as e:
-    print(f"모델 초기화 오류: {e}. 기본 모델로 폴백합니다.")
+    logger.error(f"모델 초기화 오류: {e}. 기본 모델로 폴백합니다.")
     high_perf_model = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
     standard_model = genai.GenerativeModel('gemini-pro')
     standard_model_json = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
@@ -61,17 +69,26 @@ async def generate_execution_plan(
     system_prompts: List[str] = None
 ) -> List[ExecutionGroup]:
     """
-    (수정) Planner 프롬프트. JSON 스키마를 매우 엄격하게 강조하여 AI의 오류(group_name)를 방지.
+    사용자 요청을 분석하여 실행 계획(JSON)을 수립합니다.
+    PromptManager를 사용하여 'planner' 페르소나를 로드합니다.
     """
     
     model_to_use = get_model(model_preference, default_type="high", needs_json=True)
 
     tool_descriptions = get_all_tool_descriptions()
     formatted_history = "\n".join(history[-10:]) 
-    custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
+    
+    # [수정] 프롬프트 매니저 사용
+    # 사용자가 CLI에서 --gem 옵션으로 전달한 프롬프트가 있으면 우선 사용하고,
+    # 없으면 기본 'planner' 프롬프트를 로드합니다.
+    if system_prompts:
+        base_system_prompt = "\n".join(system_prompts)
+    else:
+        # system_prompts/planner.txt 가 없으면 기본값 반환됨
+        base_system_prompt = prompt_manager.load("planner")
 
     prompt = f"""
-    {custom_system_prompt}
+    {base_system_prompt}
     
     당신은 사용자의 복잡한 목표를 달성하기 위해, 주어진 도구들을 활용하여 체계적인 실행 계획을 수립하는 '마스터 플래너'입니다.
 
@@ -91,9 +108,9 @@ async def generate_execution_plan(
     {formatted_history}
 
     ## [매우 중요] 지시사항:
-    1. 사용자의 '최종 목표'와 '이전 대화'를 분석하여, 목표 달성에 필요한 모든 작업을 식별합니다. (오류가 발생했다면, 오류를 수정하는 계획을 수립합니다.)
+    1. 사용자의 '최종 목표'와 '이전 대화'를 분석하여, 목표 달성에 필요한 모든 작업을 식별합니다.
     2. 작업들을 논리적인 순서에 따라 '실행 그룹(ExecutionGroup)' 단위로 묶어주세요.
-    3. (중요) 한 태스크가 이전 그룹의 결과(예: 'find_files'의 결과)를 인자로 사용해야 한다면, `arguments` 값에 `"$LAST_RESULT"` (가장 마지막 실행 결과) 또는 `"$MERGED_RESULTS"` (모든 이전 결과 결합) 플레이스홀더를 사용해야 합니다.
+    3. (중요) 한 태스크가 이전 그룹의 결과(예: 'find_files'의 결과)를 인자로 사용해야 한다면, `arguments` 값에 `"$LAST_RESULT"` 또는 `"$MERGED_RESULTS"` 플레이스홀더를 사용해야 합니다.
     
     ## [절대 규칙] 출력 형식:
     반드시 다음 JSON 스키마를 '정확하게' 따르는 'ExecutionGroup' 객체의 리스트(배열) 형식으로만 응답해야 합니다.
@@ -138,31 +155,29 @@ async def generate_execution_plan(
         return plan
         
     except (json.JSONDecodeError, TypeError, ValueError) as e:
-        print(f"오류 복구 JSON 파싱 오류: {e}\n받은 응답: {response.text}")
+        logger.error(f"JSON 파싱 오류: {e}\n받은 응답: {response.text}")
         raise ValueError(f"Planner 모델이 유효한 JSON 계획을 생성하지 못했습니다: {e}")
     except Exception as e:
-        print(f"Planner 모델 호출 오류: {e}")
+        logger.error(f"Planner 모델 호출 오류: {e}")
         raise e
 
-# (수정) f-string 내부의 중괄호를 {{}}로 이스케이프
+
 async def generate_new_mcp_code(
     user_instruction: str,
     history: list,
     model_preference: ModelPreference = "auto"
 ) -> str:
     """
-    'Agent Developer' 페르소나를 사용하여, 기존 MCP 스타일을 따른
-    새로운 MCP 모듈 코드를 생성합니다. (RAG 활용)
-    (수정) RAG 성능 향상을 위해 여러 스타일 가이드 파일을 참조합니다.
+    'Agent Developer' 페르소나를 사용하여 새로운 MCP 모듈 코드를 생성합니다.
     """
     
     model_to_use = get_model(model_preference, default_type="high", needs_json=False)
 
-    # (수정) 단일 파일 대신 다양한 예시 파일을 스타일 가이드로 로드
+    # 스타일 가이드 파일 로드
     style_guide_files = [
-        "file_content_operations.py", # 파일 I/O 예시
-        "code_execution_atomic.py",   # 코드/셸 실행 예시
-        "web_network_atomic.py"       # 네트워크 작업 예시
+        "file_content_operations.py", 
+        "code_execution_atomic.py",   
+        "web_network_atomic.py"       
     ]
     style_guide_code = ""
 
@@ -172,8 +187,7 @@ async def generate_new_mcp_code(
             if style_guide_path.exists():
                 header = f"\n# --- 예시: {file_name} ---\n"
                 code = style_guide_path.read_text(encoding='utf-8')
-                # f-string 이스케이프 처리
-                code = code.replace("{", "{{").replace("}", "}}")
+                code = code.replace("{", "{{").replace("}", "}}") # f-string 이스케이프
                 style_guide_code += header + code
             else:
                 logging.warning(f"MCP 스타일 가이드 파일을 찾을 수 없음: {file_name}")
@@ -181,14 +195,17 @@ async def generate_new_mcp_code(
             logging.warning(f"MCP 스타일 가이드 로드 실패 ({file_name}): {e}")
 
     if not style_guide_code:
-        style_guide_code = "# (스타일 가이드 로드 실패. 기본 Python 스타일, logging, pathlib, typing을 사용하세요.)"
+        style_guide_code = "# (스타일 가이드 로드 실패. 기본 Python 스타일을 사용하세요.)"
 
     formatted_history = "\n".join(history[-10:]) 
 
+    # [수정] PromptManager에서 'developer' 페르소나 로드
+    developer_persona = prompt_manager.load("developer")
+
     prompt = f"""
-    당신은 'AI Agent Developer'입니다. 
-    사용자가 '위험한 작업' (execute_shell_command 등)을 실행하는 대신, 
-    더 안전하고 재사용 가능한 Python MCP(Mission Control Primitive) 모듈 생성을 요청했습니다.
+    {developer_persona}
+    
+    사용자가 '위험한 작업' 대신 더 안전하고 재사용 가능한 Python MCP 모듈 생성을 요청했습니다.
 
     ## 사용자의 요청:
     {user_instruction}
@@ -198,30 +215,29 @@ async def generate_new_mcp_code(
 
     ## [매우 중요] 코딩 스타일 가이드:
     새로 생성하는 MCP 코드는 반드시 다음 '예시 코드'의 스타일을 따라야 합니다.
-    - `logging`을 사용해야 합니다.
-    - `pathlib.Path`를 사용해야 합니다.
-    - `typing` (List, Union, Optional 등)을 사용해야 합니다.
-    - 명확한 Docstring을 포함해야 합니다. (Planner가 인식하는 데 필수)
-    - 강력한 예외 처리(try...except, raise)를 포함해야 합니다.
+    - `logging` 사용 필수
+    - `pathlib.Path` 사용 필수
+    - `typing` (List, Union, Optional 등) 사용 필수
+    - 명확한 Docstring 포함 (Planner가 인식하는 데 필수)
+    - 강력한 예외 처리(try...except, raise) 포함
 
-    ## 예시 코드 (다중 파일 스타일 가이드):
+    ## 예시 코드 (스타일 가이드):
     ```python
     {style_guide_code}
     ```
 
     ## 지시사항:
-    사용자의 요청({user_instruction})을 해결할 수 있는 **단일 Python 함수**를 포함한 **완전한 MCP 모듈 파일 코드**를 생성하세요.
-    - 다른 설명이나 대답, 마크다운 래퍼 없이 **오직 Python 코드**만 반환하세요.
-    - 함수 이름은 작업 내용에 맞게 명확하게 (예: `show_and_confirm_changes`) 지어주세요.
-    - 로그에서 실패한 `{{"file_paths = $LAST_RESULT"}}`와 같은 코드가 있다면, `file_paths: List[str]`를 인자로 받는 함수로 만들어야 합니다.
+    사용자의 요청을 해결할 수 있는 **단일 Python 함수**를 포함한 **완전한 MCP 모듈 파일 코드**를 생성하세요.
+    - 마크다운 래퍼 없이 **오직 Python 코드**만 반환하세요.
+    - 함수 이름은 명확하게 (예: `show_and_confirm_changes`) 지어주세요.
 
     ## 신규 MCP 모듈 코드:
     """
 
     try:
         response = await model_to_use.generate_content_async(prompt)
-        # (신규) AI가 반환한 코드에서 마크다운 래퍼 제거
         code_content = response.text.strip()
+        # 마크다운 래퍼 제거
         if code_content.startswith("```python"):
             code_content = code_content[9:]
         if code_content.endswith("```"):
@@ -243,10 +259,11 @@ async def generate_final_answer(
     else:
         history_str = '\n'.join(history)
 
-    summary_prompt = f"""
-    다음은 AI 에이전트와 사용자의 작업 기록 요약입니다.
-    모든 작업이 완료되었습니다.
-    전체 '실행 결과'와 '사용자 목표'를 바탕으로 사용자에게 제공할 최종적이고 종합적인 답변을 한국어로 생성해주세요.
+    # [수정] PromptManager 사용 (기본값: summarizer.txt)
+    summary_prompt = prompt_manager.load("summarizer")
+    
+    full_prompt = f"""
+    {summary_prompt}
     
     --- 작업 기록 요약 ---
     {history_str}
@@ -255,14 +272,13 @@ async def generate_final_answer(
     최종 답변:
     """
     try:
-        response = await model_to_use.generate_content_async(summary_prompt)
+        response = await model_to_use.generate_content_async(full_prompt)
         if not response.parts:
                 raise ValueError("모델이 빈 응답을 반환했습니다.")
         return response.text.strip()
     except Exception as e:
         logging.error(f"Executor (generate_final_answer) 오류: {e}", exc_info=True)
-        last_result = next((item for item in reversed(history) if item.startswith("  - 실행 결과:")), "N/A")
-        return f"최종 요약 생성에 실패했습니다. 마지막 실행 결과입니다:\n{last_result}"
+        return "최종 요약 생성에 실패했습니다."
 
 async def generate_title_for_conversation(
     history: list, 
@@ -271,6 +287,7 @@ async def generate_title_for_conversation(
     model_to_use = get_model(model_preference, default_type="standard", needs_json=False)
     if len(history) < 2:
         return "새로운_대화"
+        
     summary_prompt = f"""
     다음 대화 내용을 바탕으로, 어떤 작업을 수행했는지 알 수 있도록 5단어 이내의 간결한 '요약'을 한국어로 만들어줘.
 

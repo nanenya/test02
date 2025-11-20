@@ -43,6 +43,8 @@ from .git_version_control import (
     git_get_current_branch, git_list_all_files
 )
 
+from .gemini_atomic import ask_gemini
+
 _safe_import("project_workflows", [
     "initialize_project_repository",
     "start_new_feature_branch",

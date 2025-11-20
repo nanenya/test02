@@ -11,3 +11,5 @@ bs4
 requests_mock
 pytest-mock
 pathspec
+nest_asyncio
+Pillow # 이미지처리
