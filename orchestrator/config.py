@@ -30,8 +30,8 @@ MCP_SERVERS = [
     },
     {
         "name": "fetch",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-fetch"],
+        "command": "mcp-server-fetch",
+        "args": [],
         "env": None,
     },
 ]
