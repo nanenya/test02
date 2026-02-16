@@ -5,4 +5,9 @@ backup/
 history/
 temp/
 .pytest_cache/
+__pycache__/
 orchestrator/__pycache__/
+mcp_modules/__pycache__/
+claude_tools/__pycache__/
+.project_snapshot.json
+.project_changes.json

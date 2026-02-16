@@ -2,83 +2,73 @@
 # -*- coding: utf-8 -*-
 # orchestrator/gemini_client.py
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 import json
-import logging 
+import logging
 from dotenv import load_dotenv
 from .tool_registry import get_all_tool_descriptions
 from .models import GeminiToolCall, ExecutionGroup
 from typing import List, Dict, Any, Literal
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# (수정 1) '-latest' 접미사 제거
-HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-1.5-pro")
-STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-1.5-flash")
+_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if _api_key:
+    client = genai.Client(api_key=_api_key)
+else:
+    logging.warning("GEMINI_API_KEY 환경변수가 설정되지 않았습니다. Gemini API 호출 시 오류가 발생합니다.")
+    client = None
+
+HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-2.0-flash")
+STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite")
 
 ModelPreference = Literal["auto", "standard", "high"]
 
-try:
-    high_perf_model = genai.GenerativeModel(
-        HIGH_PERF_MODEL_NAME,
-        generation_config={"response_mime_type": "application/json"}
-    )
-    high_perf_model_text = genai.GenerativeModel(HIGH_PERF_MODEL_NAME)
-    standard_model = genai.GenerativeModel(STANDARD_MODEL_NAME)
-    standard_model_json = genai.GenerativeModel(
-        STANDARD_MODEL_NAME,
-        generation_config={"response_mime_type": "application/json"}
-    )
-except Exception as e:
-    print(f"모델 초기화 오류: {e}")
-    print("경고: 모델 로드 실패. 기본 모델(gemini-pro)로 폴백합니다.")
-    high_perf_model = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
-    high_perf_model_text = genai.GenerativeModel('gemini-pro')
-    standard_model = genai.GenerativeModel('gemini-pro')
-    standard_model_json = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
+JSON_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+)
 
 
-def get_model(
+def _get_model_name(
     model_preference: ModelPreference = "auto",
     default_type: Literal["high", "standard"] = "standard",
-    needs_json: bool = False
-) -> genai.GenerativeModel:
+) -> str:
     if model_preference == "high":
-        return high_perf_model if needs_json else high_perf_model_text
-
+        return HIGH_PERF_MODEL_NAME
     if model_preference == "standard":
-        return standard_model_json if needs_json else standard_model
-
+        return STANDARD_MODEL_NAME
     if default_type == "high":
-        return high_perf_model if needs_json else high_perf_model_text
-    else:
-        return standard_model_json if needs_json else standard_model
+        return HIGH_PERF_MODEL_NAME
+    return STANDARD_MODEL_NAME
 
 
 async def generate_execution_plan(
-    user_query: str, 
-    requirements_content: str, 
+    user_query: str,
+    requirements_content: str,
     history: list,
-    model_preference: ModelPreference = "auto", 
-    system_prompts: List[str] = None 
+    model_preference: ModelPreference = "auto",
+    system_prompts: List[str] = None
 ) -> List[ExecutionGroup]:
     """
-    (수정) ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
+    ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
     목표가 완료되면 빈 리스트 []를 반환합니다.
     """
-    
-    model_to_use = get_model(model_preference, default_type="high", needs_json=True)
+
+    if not client:
+        raise RuntimeError("GEMINI_API_KEY가 설정되지 않았습니다. .env 파일에 GEMINI_API_KEY를 설정해주세요.")
+
+    model_name = _get_model_name(model_preference, default_type="high")
 
     tool_descriptions = get_all_tool_descriptions()
-    formatted_history = "\n".join(history[-10:]) 
+    formatted_history = "\n".join(history[-10:])
 
     custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
 
     prompt = f"""
     {custom_system_prompt}
-    
+
     당신은 사용자의 목표를 달성하기 위해, '이전 대화'를 분석하여 '다음 1단계'의 계획을 수립하는 'ReAct 플래너'입니다.
 
     ## 최종 목표 (사용자 최초 요청):
@@ -111,10 +101,10 @@ async def generate_execution_plan(
         "group_id": "group_N",
         "description": "다음에 실행할 단일 그룹에 대한 설명",
         "tasks": [
-          {{ 
-            "tool_name": "도구_이름", 
+          {{
+            "tool_name": "도구_이름",
             "arguments": {{"이전_결과_활용": "값"}},
-            "model_preference": "standard" 
+            "model_preference": "standard"
           }}
         ]
       }}
@@ -127,19 +117,23 @@ async def generate_execution_plan(
     """
 
     try:
-        response = await model_to_use.generate_content_async(prompt)
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=JSON_CONFIG,
+        )
         parsed_json = json.loads(response.text)
-        
+
         if not isinstance(parsed_json, list):
-             raise ValueError("응답이 리스트 형식이 아닙니다.")
+            raise ValueError("응답이 리스트 형식이 아닙니다.")
 
         if not parsed_json:
-            return [] 
-            
+            return []
+
         plan = [ExecutionGroup(**group) for group in parsed_json]
-        
-        return plan[:1] 
-        
+
+        return plan[:1]
+
     except (json.JSONDecodeError, TypeError, ValueError) as e:
         print(f"JSON 파싱 오류: {e}\n받은 응답: {response.text}")
         raise ValueError(f"Planner 모델이 유효한 JSON 계획을 생성하지 못했습니다: {e}")
@@ -147,12 +141,16 @@ async def generate_execution_plan(
         print(f"Planner 모델 호출 오류: {e}")
         raise e
 
+
 async def generate_final_answer(
-    history: list, 
-    model_preference: ModelPreference = "auto" 
+    history: list,
+    model_preference: ModelPreference = "auto"
 ) -> str:
-    
-    model_to_use = get_model(model_preference, default_type="standard", needs_json=False)
+
+    if not client:
+        raise RuntimeError("GEMINI_API_KEY가 설정되지 않았습니다.")
+
+    model_name = _get_model_name(model_preference, default_type="standard")
 
     if len(history) > 15:
         truncated_history_list = history[:2] + ["... (중간 기록 생략) ..."] + history[-13:]
@@ -164,7 +162,7 @@ async def generate_final_answer(
     다음은 AI 에이전트와 사용자의 작업 기록 요약입니다.
     모든 작업이 완료되었습니다.
     전체 '실행 결과'와 '사용자 목표'를 바탕으로 사용자에게 제공할 최종적이고 종합적인 답변을 한국어로 생성해주세요.
-    
+
     --- 작업 기록 요약 ---
     {history_str}
     ---
@@ -172,29 +170,36 @@ async def generate_final_answer(
     최종 답변:
     """
     try:
-        response = await model_to_use.generate_content_async(summary_prompt)
-        
-        if not response.parts:
-             raise ValueError("모델이 빈 응답을 반환했습니다 (내용 필터링 가능성).")
-        
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=summary_prompt,
+        )
+
+        if not response.text:
+            raise ValueError("모델이 빈 응답을 반환했습니다 (내용 필터링 가능성).")
+
         return response.text.strip()
-        
+
     except Exception as e:
         logging.error(f"Executor (generate_final_answer) 오류: {e}", exc_info=True)
-        
+
         last_result = next((item for item in reversed(history) if item.startswith("  - 실행 결과:")), None)
-        
+
         if last_result:
             return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
         else:
             return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
 
+
 async def generate_title_for_conversation(
-    history: list, 
+    history: list,
     model_preference: ModelPreference = "auto"
 ) -> str:
-    
-    model_to_use = get_model(model_preference, default_type="standard", needs_json=False)
+
+    if not client:
+        return "Untitled_Conversation"
+
+    model_name = _get_model_name(model_preference, default_type="standard")
 
     if len(history) < 2:
         return "새로운_대화"
@@ -210,10 +215,13 @@ async def generate_title_for_conversation(
     요약:
     """
     try:
-        response = await model_to_use.generate_content_async(summary_prompt)
-        
-        if not response.parts:
-             return "요약_실패"
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=summary_prompt,
+        )
+
+        if not response.text:
+            return "요약_실패"
 
         return response.text.strip().replace("*", "").replace("`", "").replace("\"", "")
     except Exception:
