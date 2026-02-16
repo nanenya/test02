@@ -10,3 +10,5 @@ feedparser
 bs4
 requests_mock
 pytest-mock
+mcp>=1.0.0            # MCP Python SDK (클라이언트)
+mcp-server-git        # Git MCP 서버

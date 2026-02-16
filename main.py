@@ -35,8 +35,8 @@ if not os.path.exists(default_prompt_path):
 # -------------------------------------------
 
 
-@app.command()
-def list():
+@app.command(name="list")
+def list_conversations_cmd():
     """저장된 대화 목록을 표시합니다."""
     try:
         convos = list_conversations()

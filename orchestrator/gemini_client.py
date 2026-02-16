@@ -25,6 +25,7 @@ try:
         HIGH_PERF_MODEL_NAME,
         generation_config={"response_mime_type": "application/json"}
     )
+    high_perf_model_text = genai.GenerativeModel(HIGH_PERF_MODEL_NAME)
     standard_model = genai.GenerativeModel(STANDARD_MODEL_NAME)
     standard_model_json = genai.GenerativeModel(
         STANDARD_MODEL_NAME,
@@ -33,8 +34,8 @@ try:
 except Exception as e:
     print(f"모델 초기화 오류: {e}")
     print("경고: 모델 로드 실패. 기본 모델(gemini-pro)로 폴백합니다.")
-    # (수정 1) 폴백 모델도 '-latest' 없이
     high_perf_model = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
+    high_perf_model_text = genai.GenerativeModel('gemini-pro')
     standard_model = genai.GenerativeModel('gemini-pro')
     standard_model_json = genai.GenerativeModel('gemini-pro', generation_config={"response_mime_type": "application/json"})
 
@@ -45,14 +46,14 @@ def get_model(
     needs_json: bool = False
 ) -> genai.GenerativeModel:
     if model_preference == "high":
-        return high_perf_model if needs_json else genai.GenerativeModel(HIGH_PERF_MODEL_NAME) 
-    
+        return high_perf_model if needs_json else high_perf_model_text
+
     if model_preference == "standard":
         return standard_model_json if needs_json else standard_model
-    
+
     if default_type == "high":
-        return high_perf_model if needs_json else genai.GenerativeModel(HIGH_PERF_MODEL_NAME)
-    else: 
+        return high_perf_model if needs_json else high_perf_model_text
+    else:
         return standard_model_json if needs_json else standard_model
 
 

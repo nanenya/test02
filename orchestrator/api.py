@@ -2,25 +2,29 @@
 # -*- coding: utf-8 -*-
 # orchestrator/api.py
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from .models import AgentRequest, AgentResponse, GeminiToolCall, ExecutionGroup
 from .gemini_client import (
-    generate_execution_plan, 
-    generate_final_answer, 
+    generate_execution_plan,
+    generate_final_answer,
     generate_title_for_conversation
 )
 from . import tool_registry
 from . import history_manager
 import inspect
 import os
-import re 
-from datetime import datetime 
+import re
+from datetime import datetime
 
-app = FastAPI(title="Gemini Agent Orchestrator")
 
-@app.on_event("startup")
-async def startup_event():
-    tool_registry.load_tools()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await tool_registry.initialize()
+    yield
+    await tool_registry.shutdown()
+
+app = FastAPI(title="Gemini Agent Orchestrator", lifespan=lifespan)
 
 @app.post("/agent/decide_and_act", response_model=AgentResponse)
 async def decide_and_act(request: AgentRequest):

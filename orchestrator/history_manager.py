@@ -99,15 +99,6 @@ def load_conversation(convo_id: str) -> Optional[Dict[str, Any]]:
             data = json.load(f)
             return data
     except FileNotFoundError:
-        # (요청사항 3) .json을 붙이지 않은 UUID로 시도 (e.g. --continue <uuid>)
-        if not convo_id.endswith(".json"):
-            try:
-                filepath_uuid = os.path.join(HISTORY_DIR, f"{convo_id}.json")
-                with open(filepath_uuid, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data
-            except FileNotFoundError:
-                return None
         return None
     except json.JSONDecodeError:
         print(f"JSON 파싱 오류: {filepath}")
