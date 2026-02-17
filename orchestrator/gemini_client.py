@@ -26,6 +26,33 @@ STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite"
 
 ModelPreference = Literal["auto", "standard", "high"]
 
+
+DEFAULT_HISTORY_MAX_CHARS = 6000
+
+
+def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
+    """최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation.
+
+    뒤(최신)부터 역순으로 항목을 추가하되, max_chars를 초과하면 중단합니다.
+    """
+    if not history:
+        return ""
+
+    selected = []
+    total = 0
+    for item in reversed(history):
+        item_len = len(item)
+        if total + item_len > max_chars and selected:
+            break
+        selected.append(item)
+        total += item_len
+
+    selected.reverse()
+
+    if len(selected) < len(history):
+        return "... (이전 기록 생략) ...\n" + "\n".join(selected)
+    return "\n".join(selected)
+
 JSON_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
@@ -62,7 +89,7 @@ async def generate_execution_plan(
     model_name = _get_model_name(model_preference, default_type="high")
 
     tool_descriptions = get_all_tool_descriptions()
-    formatted_history = "\n".join(history[-10:])
+    formatted_history = _truncate_history(history)
 
     custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
 
@@ -132,6 +159,7 @@ async def generate_execution_plan(
 
         plan = [ExecutionGroup(**group) for group in parsed_json]
 
+        # ReAct: LLM이 여러 그룹을 반환해도 1개만 사용 (1-step 계획/실행/재계획 루프)
         return plan[:1]
 
     except (json.JSONDecodeError, TypeError, ValueError) as e:
@@ -152,11 +180,7 @@ async def generate_final_answer(
 
     model_name = _get_model_name(model_preference, default_type="standard")
 
-    if len(history) > 15:
-        truncated_history_list = history[:2] + ["... (중간 기록 생략) ..."] + history[-13:]
-        history_str = '\n'.join(truncated_history_list)
-    else:
-        history_str = '\n'.join(history)
+    history_str = _truncate_history(history)
 
     summary_prompt = f"""
     다음은 AI 에이전트와 사용자의 작업 기록 요약입니다.

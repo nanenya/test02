@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 # --- 보안 관련 설정 ---
 # 실제 운영 환경에서는 허용/차단 목록을 외부 설정 파일이나 환경 변수에서 관리해야 합니다.
 FORBIDDEN_COMMANDS = {'rm', 'mv', 'dd', 'mkfs'} # 매우 위험한 명령어 예시 집합
-ALLOWED_BASE_PATH = Path(os.getcwd()).resolve() # 파일 접근을 현재 작업 디렉토리로 제한
+ALLOWED_BASE_PATH = Path(
+    os.environ.get("ALLOWED_BASE_PATH", Path(__file__).resolve().parent.parent)
+).resolve()  # 프로젝트 루트 기반, 환경변수로 오버라이드 가능
 
 def execute_shell_command(command: str, timeout: int = 10) -> str:
     """안전하게 셸 명령어를 실행하고 결과를 문자열로 반환합니다.
@@ -97,17 +99,17 @@ def execute_shell_command(command: str, timeout: int = 10) -> str:
         logger.exception(f"셸 명령어 실행 중 예기치 않은 오류 발생: {command}")
         return f"예기치 않은 오류: {e}"
 
-def execute_python_code(code_str: str, sandboxed: bool = False) -> Any:
-    """파이썬 코드 문자열을 실행하고 결과를 반환합니다. (매우 위험)
+def execute_python_code(code_str: str, sandboxed: bool = False, timeout: int = 30) -> Any:
+    """파이썬 코드 문자열을 별도 프로세스에서 격리 실행하고 결과를 반환합니다.
 
-    이 함수는 `exec`를 사용하므로 극도의 주의가 필요합니다.
-    반드시 격리된 샌드박스 환경(예: Docker 컨테이너)에서만 호출되어야 합니다.
+    subprocess를 통해 코드를 격리 실행하므로 메인 프로세스에 영향을 주지 않습니다.
     안전장치로 `sandboxed` 인자를 True로 명시해야만 실행됩니다.
 
     Args:
         code_str (str): 실행할 파이썬 코드.
         sandboxed (bool, optional): 코드가 샌드박스 환경에서 실행되는지 여부.
             이 값이 True가 아니면 보안을 위해 코드를 실행하지 않습니다. 기본값은 False.
+        timeout (int, optional): 코드 실행 최대 대기 시간(초). 기본값은 30.
 
     Returns:
         Any: 코드 실행 결과. `result` 변수에 할당된 값을 반환합니다.
@@ -115,7 +117,8 @@ def execute_python_code(code_str: str, sandboxed: bool = False) -> Any:
 
     Raises:
         PermissionError: `sandboxed` 인자가 True로 설정되지 않은 경우 발생합니다.
-        Exception: 코드 실행 중 발생하는 모든 예외.
+        TimeoutError: 지정된 시간 내에 코드가 완료되지 않은 경우 발생합니다.
+        RuntimeError: 코드 실행 중 오류가 발생한 경우.
 
     Example:
         >>> code = "result = 1 + 1"
@@ -127,16 +130,53 @@ def execute_python_code(code_str: str, sandboxed: bool = False) -> Any:
         logger.critical("보안 위험: 샌드박스 환경이 아닌 곳에서 코드 실행 시도가 차단되었습니다.")
         raise PermissionError("보안 오류: 이 기능은 반드시 샌드박스 환경에서만 사용해야 합니다.")
 
+    import tempfile
+
+    # 사용자 코드를 래핑: result 변수를 JSON으로 stdout에 출력
+    wrapper_code = (
+        "import json, sys\n"
+        "result = None\n"
+        f"{code_str}\n"
+        "print(json.dumps(result))\n"
+    )
+
     try:
-        # 실행 결과를 담을 로컬 네임스페이스
-        local_scope = {}
-        exec(code_str, {}, local_scope)
-        result = local_scope.get('result', None)
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.py', delete=False, encoding='utf-8'
+        ) as tmp:
+            tmp.write(wrapper_code)
+            tmp_path = tmp.name
+
+        process = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        if process.returncode != 0:
+            error_msg = process.stderr.strip()
+            logger.error(f"파이썬 코드 실행 실패: {error_msg}")
+            raise RuntimeError(f"코드 실행 오류: {error_msg}")
+
+        stdout = process.stdout.strip()
+        result = json.loads(stdout) if stdout else None
         logger.info("파이썬 코드 실행 성공.")
         return result
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"파이썬 코드 실행 시간 초과: {timeout}초")
+        raise TimeoutError(f"코드 실행이 {timeout}초 내에 완료되지 않았습니다.")
+    except (RuntimeError, TimeoutError):
+        raise
     except Exception as e:
         logger.exception("파이썬 코드 실행 중 오류 발생.")
-        raise e
+        raise RuntimeError(f"코드 실행 중 예기치 않은 오류: {e}")
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except (OSError, UnboundLocalError):
+            pass
 
 def read_code_file(path: str) -> str:
     """지정된 경로의 코드 파일 내용을 안전하게 읽어 문자열로 반환합니다.

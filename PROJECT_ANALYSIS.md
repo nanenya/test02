@@ -6,28 +6,19 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-02-16 (정확성 검증 완료)
+> 마지막 갱신: 2026-02-17 (5가지 개선점 + 테스트 추가 반영)
 
 ### 0.1 완료된 요구사항 (Completed)
 
 | # | 요구사항 | 적용 파일 | 상태 | 비고 |
 |---|---------|-----------|------|------|
-| 1 | ReAct 아키텍처로 전환 (Plan-and-Execute → ReAct) | api.py, models.py, main.py, gemini_client.py | DONE | 전체 계획 대신 1-step씩 계획/실행/재계획 |
-| 2 | STEP_EXECUTED 상태 추가 | models.py:37, api.py:222-227, main.py:136-146 | DONE | 그룹 실행 후 Re-plan 트리거 |
-| 3 | 대화 저장 시 파일명을 '시간-요약.json'으로 변경 | history_manager.py (전체) | DONE | is_final=True → 타임스탬프-제목 형식, UUID 임시파일 자동 삭제 |
-| 4 | display_full_plan 함수 제거 | main.py:31-35 | DONE | ReAct에서는 전체 계획을 미리 알 수 없으므로 제거 |
-| 5 | plan 필드 제거 (AgentResponse) | models.py:41-42 | DONE | ReAct 모델에서 불필요 |
-| 6 | save_conversation 인자 누락 수정 | api.py:94-96, api.py:150-152 | DONE | plan=[], current_group_index=0 추가 |
-| 7 | 시스템 프롬프트(Gem) 기능 추가 | main.py:57,69-79, api.py, gemini_client.py:67 | DONE | --gem 옵션, system_prompts/ 디렉토리 |
-| 8 | 요구사항 파일 참조 기능 | main.py:55, api.py:49-58 | DONE | --req 옵션으로 외부 파일 내용 주입 |
-| 9 | 모델 선호도 선택 기능 | main.py:56, gemini_client.py:34-44 | DONE | --model-pref (auto/standard/high) |
-| 10 | MCP 서버 통합 (filesystem, git, fetch) | config.py, tool_registry.py | DONE | 로컬+MCP 하이브리드 도구 레지스트리 |
-| 11 | 도구명 별칭(alias) 지원 | config.py:40-69, tool_registry.py:126 | DONE | 기존 도구명 → MCP 도구명 매핑 |
-| 12 | 대화 제목 자동 생성 | gemini_client.py:194-228 | DONE | LLM 기반 5단어 이내 요약 |
-| 13 | 프로젝트 파일 분석 및 보고서 작성 | PROJECT_ANALYSIS.md | DONE | 전체 구조, 아키텍처, 모듈 분석 |
-| 14 | 토큰 절약용 자동화 도구 (claude_tools/) 구축 | claude_tools/ (4파일) | DONE | project_scanner, change_tracker, report_updater, CLI |
-| 15 | 보고서 자급자족: 파일별 함수 시그니처/의존성 맵 자동 생성 | PROJECT_ANALYSIS.md 섹션 11,12 | DONE | `python -m claude_tools update`로 자동 갱신 |
-| 16 | .gitignore에 스냅샷/캐시 파일 추가 | .gitignore | DONE | .project_snapshot.json, .project_changes.json, __pycache__/ |
+| 22 | MCP 연결 실패 graceful handling | tool_registry.py | DONE | 실패 카운트 + 실패 서버명 warning 로그 |
+| 23 | ALLOWED_BASE_PATH 보안 개선 | code_execution_atomic.py | DONE | 모듈 위치 기반 + 환경변수 오버라이드 |
+| 24 | orchestrator 테스트 추가 (26개) | test_api.py, test_gemini_client.py, test_tool_registry.py | DONE | pytest-asyncio 의존성 추가 |
+| 25 | history truncation max_chars 보수적 조정 | gemini_client.py | DONE | 8000→6000, DEFAULT_HISTORY_MAX_CHARS 상수 추출 |
+| 26 | pytest-asyncio를 requirements.txt에 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md | DONE | 완료 요구사항/변경이력 최근 5개만 보존 |
+
+> *#1~#21은 이전 작업으로 정리 완료 (최근 5개만 표시)*
 
 ### 0.2 진행 중인 요구사항 (In Progress)
 
@@ -45,21 +36,17 @@
 | P4 | file_system_composite 모듈 Python 구현 | file_system_composite.spec.yaml | Medium | move, find, replace 등 고수준 기능 |
 | P5 | git_version_control 모듈 Python 구현 | git_version_control.spec.yaml | Low | MCP git 서버가 커버 |
 | P6 | web_network_atomic 모듈 Python 구현 | web_network_atomic.spec.yaml | Medium | fetch, API 호출, DNS, SSL 등 |
-| P7 | execute_python_code 실제 샌드박스 격리 | code_execution_atomic.py | High | 현재 exec() + 플래그만으로 부족 |
-| P8 | history 컨텍스트 윈도우 개선 | gemini_client.py:65 | Medium | history[-10:] 제한 → 동적 요약 등 |
-| P9 | orchestrator 테스트 추가 | orchestrator/ | Medium | api.py, gemini_client.py 등 테스트 없음 |
-| P10 | python_history.txt 정리 | python_history.txt | Low | 프로젝트와 무관한 파일 |
 
 ### 0.4 변경 이력 (Change Log)
 
 | 날짜 | 작업 내용 | 변경 파일 |
 |------|-----------|-----------|
-| 2026-02-16 | 프로젝트 전체 분석 및 보고서 작성 | PROJECT_ANALYSIS.md (신규) |
-| 2026-02-16 | 요구사항 추적 섹션 추가 | PROJECT_ANALYSIS.md |
-| 2026-02-16 | 토큰 절약 자동화 도구 구축 (claude_tools/) | claude_tools/{__init__,__main__,project_scanner,change_tracker,report_updater}.py |
-| 2026-02-16 | 보고서 자급자족: 섹션 11(파일 카탈로그), 12(의존성 맵) 자동 생성 | PROJECT_ANALYSIS.md |
-| 2026-02-16 | .gitignore 갱신 (스냅샷/캐시 제외) | .gitignore |
-| 2026-02-16 | 보고서 정확성 검증 및 불일치 수정 (줄번호, history truncation, 모델 환경변수, 보안 경로 등) | PROJECT_ANALYSIS.md |
+| 2026-02-17 | 알려진 이슈 해결: python_history.txt 삭제, history truncation 통합, plan[:1] 주석, exec()→subprocess 격리 | gemini_client.py, code_execution_atomic.py, test_code_execution_atomic.py, PROJECT_ANALYSIS.md |
+| 2026-02-17 | 보고서 정리: 완료 요구사항/변경이력 축약, 해결된 이슈 제거 | PROJECT_ANALYSIS.md |
+| 2026-02-17 | 5가지 개선: 보고서 정리, MCP graceful handling, ALLOWED_BASE_PATH 보안, orchestrator 테스트 26개 추가, history max_chars 조정 | PROJECT_ANALYSIS.md, tool_registry.py, code_execution_atomic.py, gemini_client.py, test_api.py, test_gemini_client.py, test_tool_registry.py |
+| 2026-02-17 | pytest-asyncio requirements.txt 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md |
+
+> *최근 5개만 표시, 이전 이력은 정리 완료*
 
 ---
 ---
@@ -85,7 +72,6 @@ test02/
 ├── start.sh                     # venv 활성화 스크립트
 ├── pytest.ini                   # pytest 설정
 ├── .gitignore
-├── python_history.txt           # 참고용 텍스트 (Python 역사)
 ├── orchestrator/                # 핵심 오케스트레이터 패키지
 │   ├── __init__.py              # 패키지 초기화 (로깅 설정)
 │   ├── config.py                # MCP 서버 및 로컬 모듈 설정
@@ -310,22 +296,17 @@ pytest
 ## 10. 알려진 이슈 및 개선 포인트
 
 1. **스펙만 존재하는 모듈**: file_management, file_content_operations, file_attributes, file_system_composite, git_version_control, web_network_atomic 등은 YAML 스펙만 있고 Python 구현체가 없음 (MCP 서버로 위임 예정)
-2. **gemini_client.py**: history 길이 제한 — `generate_execution_plan`은 `history[-10:]` (최근 10개만), `generate_final_answer`는 15개 초과 시 `history[:2] + history[-13:]` (처음 2개 + 최근 13개)으로 각각 다른 truncation 방식 사용
-3. **api.py**: `generate_execution_plan` 결과를 `plan[:1]`로 항상 1개만 사용하므로, LLM이 여러 그룹을 생성해도 무시됨
-4. **보안**: `execute_python_code`에서 `exec()` 사용 - sandboxed 플래그만으로는 실제 격리 불충분
-5. **에러 핸들링**: 일부 경로에서 save_conversation 호출 시 필수 인자 누락 가능성 (수정 주석 존재)
-6. **python_history.txt**: 프로젝트와 무관한 파이썬 역사 텍스트 (정리 필요)
 
 ---
 
 ## 11. 파일별 상세 카탈로그 (자동 생성)
 
-> 자동 생성 시각: 2026-02-16T21:58:23
-> Python 파일: 22개 | 함수: 104개 | 클래스: 19개 | 총 라인: 4161줄
+> 자동 생성 시각: 2026-02-17T09:11:28
+> Python 파일: 25개 | 함수: 106개 | 클래스: 29개 | 총 라인: 4579줄
 
 ### ./
 
-#### `PROJECT_ANALYSIS.md` (786줄, 49,215B)
+#### `PROJECT_ANALYSIS.md` (772줄, 47,493B)
 
 #### `main.py` (232줄, 10,192B)
 
@@ -339,8 +320,6 @@ pytest
 의존성: `httpx`, `orchestrator`, `os`, `re`, `rich`, `socket`, `subprocess`, `time`, `typer`, `typing`
 
 #### `pytest.ini` (3줄, 37B)
-
-#### `python_history.txt` (1줄, 921B)
 
 #### `requirements.txt` (16줄, 363B)
 
@@ -396,13 +375,13 @@ pytest
 
 의존성: `code_execution_atomic`, `code_execution_composite`, `user_interaction_atomic`, `user_interaction_composite`
 
-#### `code_execution_atomic.py` (449줄, 19,573B)
+#### `code_execution_atomic.py` (489줄, 21,022B)
 > code_execution_atomic.py: AI 에이전트를 위한 레벨 1 원자(Atomic) MCP 핵심 라이브러리  이 모듈은 AI 에이전트가 운영체제, 파일 시스템, 코드 분석 등 기본적인 작업을 수행할 수 있도록 돕는 저수준(low-level)의 원자적 기능들을 제공합니다. 각 함수는 프로덕션 환경에서 사용될 것을 가정하여 보안, 로깅, 예외 처리
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `execute_shell_command` | `command: str, timeout: int` | `str` | 안전하게 셸 명령어를 실행하고 결과를 문자열로 반환합니다. |
-| `execute_python_code` | `code_str: str, sandboxed: bool` | `Any` | 파이썬 코드 문자열을 실행하고 결과를 반환합니다. (매우 위험) |
+| `execute_python_code` | `code_str: str, sandboxed: bool, timeout: int` | `Any` | 파이썬 코드 문자열을 별도 프로세스에서 격리 실행하고 결과를 반환합니다. |
 | `read_code_file` | `path: str` | `str` | 지정된 경로의 코드 파일 내용을 안전하게 읽어 문자열로 반환합니다. |
 | `get_environment_variable` | `var_name: str` | `Optional[str]` | 특정 환경 변수의 값을 조회합니다. |
 | `set_environment_variable` | `var_name: str, value: str` | `bool` | 특정 환경 변수의 값을 설정하거나 새로 생성합니다. |
@@ -463,7 +442,7 @@ pytest
 
 정의된 MCP: `git_version_control`, `git_init`, `path`, `git_clone`, `repo_url`, `local_path`, `git_status`, `repo_path`, `git_add`, `repo_path`, `files`, `git_commit`, `repo_path`, `message`, `git_push`...
 
-#### `test_code_execution_atomic.py` (189줄, 7,951B)
+#### `test_code_execution_atomic.py` (194줄, 8,240B)
 > test_code_execution_automic.py: code_execution_atomic 모듈에 대한 단위 테스트
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -485,9 +464,10 @@ pytest
 |--------|------|------|
 | `test_success` | `self` | 성공 케이스: 간단한 연산 코드 실행 |
 | `test_failure_no_sandbox_flag` | `self` | 실패 케이스: sandboxed=True 플래그 없이 실행 |
-| `test_edge_case_syntax_error` | `self` | 엣지 케이스: 문법 오류가 있는 코드 |
+| `test_edge_case_syntax_error` | `self` | 엣지 케이스: 문법 오류가 있는 코드 (subprocess에서 RuntimeError로 래핑) |
+| `test_edge_case_timeout` | `self` | 엣지 케이스: 코드 실행 시간 초과 |
 
-**class `TestReadCodeFile`** (line 72)
+**class `TestReadCodeFile`** (line 77)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -495,14 +475,14 @@ pytest
 | `test_failure_file_not_found` | `self` | 실패 케이스: 존재하지 않는 파일 읽기 |
 | `test_edge_case_path_traversal` | `self` | 엣지 케이스: 허용된 경로 외부 접근 시도 |
 
-**class `TestEnvironmentVariables`** (line 92)
+**class `TestEnvironmentVariables`** (line 97)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_get_set_variable_success` | `self` | 성공 케이스: 환경 변수 설정 및 조회 |
 | `test_get_non_existent_variable` | `self` | 엣지 케이스: 존재하지 않는 환경 변수 조회 |
 
-**class `TestCheckPortStatus`** (line 114)
+**class `TestCheckPortStatus`** (line 119)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -510,7 +490,7 @@ pytest
 | `test_failure_port_closed` | `self, mock_socket` | 실패 케이스: 포트가 닫혀있는 경우 |
 | `test_edge_case_invalid_host` | `self` | 엣지 케이스: 유효하지 않은 호스트 |
 
-**class `TestGetFunctionSignature`** (line 141)
+**class `TestGetFunctionSignature`** (line 146)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -518,7 +498,7 @@ pytest
 | `test_failure_function_not_found` | `self, temp_file` | 실패 케이스: 존재하지 않는 함수 |
 | `test_edge_case_file_not_found` | `self` | 엣지 케이스: 파일이 없음 |
 
-**class `TestExternalDependencies`** (line 161)
+**class `TestExternalDependencies`** (line 166)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -721,7 +701,7 @@ pytest
 
 의존성: `os`
 
-#### `gemini_client.py` (228줄, 7,982B)
+#### `gemini_client.py` (252줄, 8,662B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -758,7 +738,104 @@ pytest
 
 의존성: `pydantic`, `typing`
 
-#### `tool_registry.py` (151줄, 4,972B)
+#### `test_api.py` (162줄, 6,651B)
+> orchestrator/api.py에 대한 단위 테스트
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `sample_group` | `` | `-` | - |
+
+**class `TestDecideAndAct`** (line 22)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_new_request_returns_plan_confirmation` | `self, sample_group` | 신규 사용자 입력 시 PLAN_CONFIRMATION 반환 |
+| `test_empty_plan_returns_final_answer` | `self` | 플래너가 빈 계획 반환 시 FINAL_ANSWER |
+
+**class `TestExecuteGroup`** (line 70)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_conversation_returns_404` | `self` | 존재하지 않는 대화 ID는 404 |
+| `test_successful_execution_returns_step_executed` | `self, sample_group` | 정상 실행 시 STEP_EXECUTED 반환 |
+| `test_missing_tool_returns_error` | `self, sample_group` | 도구를 찾을 수 없을 때 ERROR 반환 |
+| `test_empty_plan_returns_400` | `self` | 실행할 계획이 없으면 400 |
+
+의존성: `api`, `httpx`, `models`, `pytest`, `unittest`
+
+#### `test_gemini_client.py` (95줄, 3,685B)
+> orchestrator/gemini_client.py에 대한 단위 테스트
+
+**class `TestTruncateHistory`** (line 13)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_empty_history` | `self` | 빈 history는 빈 문자열 반환 |
+| `test_normal_history` | `self` | 정상 history는 줄바꿈으로 연결 |
+| `test_truncation_over_max_chars` | `self` | max_chars 초과 시 최신 항목 우선 보존, 생략 표시 포함 |
+| `test_single_item_exceeds_max` | `self` | 단일 항목이 max_chars를 초과해도 최소 1개는 포함 |
+| `test_default_max_chars_is_constant` | `self` | 기본 max_chars가 DEFAULT_HISTORY_MAX_CHARS 상수와 일치 |
+
+**class `TestGetModelName`** (line 42)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_high_preference` | `self` | model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환 |
+| `test_standard_preference` | `self` | model_preference='standard'이면 STANDARD_MODEL_NAME 반환 |
+| `test_auto_with_high_default` | `self` | auto + default_type='high'이면 HIGH_PERF_MODEL_NAME |
+| `test_auto_with_standard_default` | `self` | auto + default_type='standard'이면 STANDARD_MODEL_NAME |
+
+**class `TestGenerateExecutionPlan`** (line 64)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
+
+**class `TestGenerateFinalAnswer`** (line 73)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
+
+**class `TestGenerateTitleForConversation`** (line 82)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_client_returns_default` | `self` | client=None일 때 기본 제목 반환 |
+| `test_short_history_returns_new_conversation` | `self` | history가 2개 미만이면 '새로운_대화' 반환 |
+
+의존성: `json`, `models`, `pytest`, `unittest`
+
+#### `test_tool_registry.py` (78줄, 2,468B)
+> orchestrator/tool_registry.py에 대한 단위 테스트
+
+**class `TestLoadLocalModules`** (line 13)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | 각 테스트 전 TOOLS/TOOL_DESCRIPTIONS 초기화 |
+| `test_successful_load` | `self` | 정상 모듈 로드 시 TOOLS에 함수가 등록됨 |
+| `test_failed_module_logged` | `self` | 존재하지 않는 모듈 로드 시 에러 로깅 후 계속 진행 |
+| `test_all_tools_have_descriptions` | `self` | 로드된 모든 도구에 설명이 있음 |
+
+**class `TestGetTool`** (line 43)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | - |
+| `test_local_tool` | `self` | 로컬 도구 이름으로 함수 반환 |
+| `test_alias_resolution` | `self` | 별칭으로 MCP 도구 검색 |
+| `test_nonexistent_tool` | `self` | 존재하지 않는 도구는 None 반환 |
+
+**class `TestGetAllToolDescriptions`** (line 74)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_returns_dict` | `self` | 반환 타입이 dict |
+
+의존성: `importlib`, `pytest`, `unittest`
+
+#### `tool_registry.py` (165줄, 5,475B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -782,5 +859,7 @@ pytest
   test_code_execution_atomic.py → .code_execution_atomic
   test_user_interaction_composite.py → .user_interaction_composite
   api.py → .history_manager, .tool_registry
+  test_gemini_client.py → .gemini_client
+  test_tool_registry.py → .config, .tool_registry
   tool_registry.py → .config
 ```

@@ -91,8 +91,22 @@ async def initialize():
     _exit_stack = AsyncExitStack()
     await _exit_stack.__aenter__()
 
+    failed_servers = []
     for server_config in config.MCP_SERVERS:
+        before = len(_mcp_sessions)
         await _connect_mcp_server(_exit_stack, server_config)
+        if len(_mcp_sessions) == before:
+            failed_servers.append(server_config["name"])
+
+    if failed_servers:
+        if len(failed_servers) == len(config.MCP_SERVERS):
+            logging.warning(
+                f"All MCP servers failed to connect: {failed_servers}"
+            )
+        else:
+            logging.warning(
+                f"{len(failed_servers)} MCP server(s) failed to connect: {failed_servers}"
+            )
 
     logging.info(
         f"Tool registry initialized: "

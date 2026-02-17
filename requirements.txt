@@ -14,3 +14,4 @@ mcp>=1.0.0            # MCP Python SDK (클라이언트)
 mcp-server-git        # Git MCP 서버
 mcp-server-fetch      # Fetch MCP 서버
 questionary           # 대화형 사용자 입력 UI
+pytest-asyncio        # async 테스트 지원
