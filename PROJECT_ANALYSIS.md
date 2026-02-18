@@ -6,19 +6,18 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-02-17 (5가지 개선점 + 테스트 추가 반영)
+> 마지막 갱신: 2026-02-18 (미구현 MCP 모듈 6개 Python 구현)
 
 ### 0.1 완료된 요구사항 (Completed)
 
 | # | 요구사항 | 적용 파일 | 상태 | 비고 |
 |---|---------|-----------|------|------|
-| 22 | MCP 연결 실패 graceful handling | tool_registry.py | DONE | 실패 카운트 + 실패 서버명 warning 로그 |
-| 23 | ALLOWED_BASE_PATH 보안 개선 | code_execution_atomic.py | DONE | 모듈 위치 기반 + 환경변수 오버라이드 |
-| 24 | orchestrator 테스트 추가 (26개) | test_api.py, test_gemini_client.py, test_tool_registry.py | DONE | pytest-asyncio 의존성 추가 |
-| 25 | history truncation max_chars 보수적 조정 | gemini_client.py | DONE | 8000→6000, DEFAULT_HISTORY_MAX_CHARS 상수 추출 |
 | 26 | pytest-asyncio를 requirements.txt에 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md | DONE | 완료 요구사항/변경이력 최근 5개만 보존 |
+| 27 | MCP Server Manager 구현 | mcp_servers.json, mcp_manager.py, config.py, tool_registry.py, main.py, api.py, test_mcp_manager.py, test_tool_registry.py | DONE | JSON 레지스트리, CLI mcp 서브커맨드 6개, 테스트 33개 통과 |
+| 28 | AI 모델 동적 조회/선택 구현 | model_config.json, model_manager.py, config.py, main.py, test_model_manager.py | DONE | 4개 프로바이더, CLI model 서브커맨드 3개, 테스트 18개 통과 |
+| 29 | 미구현 MCP 모듈 6개 Python 구현 + 테스트 | file_attributes.py, file_management.py, file_content_operations.py, file_system_composite.py, git_version_control.py, web_network_atomic.py + 테스트 6개 | DONE | 전체 218개 테스트 통과, config.py LOCAL_MODULES 추가, __init__.py import 추가 |
 
-> *#1~#21은 이전 작업으로 정리 완료 (최근 5개만 표시)*
+> *#1~#25는 이전 작업으로 정리 완료 (최근 5개만 표시)*
 
 ### 0.2 진행 중인 요구사항 (In Progress)
 
@@ -30,21 +29,16 @@
 
 | # | 요구사항 | 관련 스펙 | 우선순위 | 비고 |
 |---|---------|-----------|----------|------|
-| P1 | file_management 모듈 Python 구현 | file_management.spec.yaml | Medium | MCP 서버로 위임 중이지만 로컬 fallback 필요할 수 있음 |
-| P2 | file_content_operations 모듈 Python 구현 | file_content_operations.spec.yaml | Medium | 동일 |
-| P3 | file_attributes 모듈 Python 구현 | file_attributes.spec.yaml | Low | MCP filesystem 서버가 커버 |
-| P4 | file_system_composite 모듈 Python 구현 | file_system_composite.spec.yaml | Medium | move, find, replace 등 고수준 기능 |
-| P5 | git_version_control 모듈 Python 구현 | git_version_control.spec.yaml | Low | MCP git 서버가 커버 |
-| P6 | web_network_atomic 모듈 Python 구현 | web_network_atomic.spec.yaml | Medium | fetch, API 호출, DNS, SSL 등 |
+| - | 현재 없음 | - | - | - |
 
 ### 0.4 변경 이력 (Change Log)
 
 | 날짜 | 작업 내용 | 변경 파일 |
 |------|-----------|-----------|
-| 2026-02-17 | 알려진 이슈 해결: python_history.txt 삭제, history truncation 통합, plan[:1] 주석, exec()→subprocess 격리 | gemini_client.py, code_execution_atomic.py, test_code_execution_atomic.py, PROJECT_ANALYSIS.md |
-| 2026-02-17 | 보고서 정리: 완료 요구사항/변경이력 축약, 해결된 이슈 제거 | PROJECT_ANALYSIS.md |
-| 2026-02-17 | 5가지 개선: 보고서 정리, MCP graceful handling, ALLOWED_BASE_PATH 보안, orchestrator 테스트 26개 추가, history max_chars 조정 | PROJECT_ANALYSIS.md, tool_registry.py, code_execution_atomic.py, gemini_client.py, test_api.py, test_gemini_client.py, test_tool_registry.py |
 | 2026-02-17 | pytest-asyncio requirements.txt 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md |
+| 2026-02-18 | MCP Server Manager 구현: JSON 레지스트리, mcp_manager.py, config.py/tool_registry.py 리팩토링, main.py mcp 서브커맨드 6개, 테스트 33개 | mcp_servers.json, mcp_manager.py, config.py, tool_registry.py, main.py, api.py, test_mcp_manager.py, test_tool_registry.py |
+| 2026-02-18 | AI 모델 동적 조회/선택: model_config.json, model_manager.py 신규, config.py ACTIVE_PROVIDER/MODEL 추가, main.py model 서브커맨드 3개, 테스트 18개 | model_config.json, model_manager.py, config.py, main.py, test_model_manager.py |
+| 2026-02-18 | 미구현 MCP 모듈 6개 Python 구현: file_attributes(7함수), file_management(5함수), file_content_operations(5함수), file_system_composite(10함수), git_version_control(20함수), web_network_atomic(16함수) + 테스트 6개 (신규 139개), config.py/\_\_init\_\_.py 갱신 | file_attributes.py, file_management.py, file_content_operations.py, file_system_composite.py, git_version_control.py, web_network_atomic.py, test_file_attributes.py, test_file_management.py, test_file_content_operations.py, test_file_system_composite.py, test_git_version_control.py, test_web_network_atomic.py, config.py, \_\_init\_\_.py |
 
 > *최근 5개만 표시, 이전 이력은 정리 완료*
 
@@ -301,14 +295,14 @@ pytest
 
 ## 11. 파일별 상세 카탈로그 (자동 생성)
 
-> 자동 생성 시각: 2026-02-17T09:11:28
-> Python 파일: 25개 | 함수: 106개 | 클래스: 29개 | 총 라인: 4579줄
+> 자동 생성 시각: 2026-02-18T23:11:03
+> Python 파일: 41개 | 함수: 225개 | 클래스: 90개 | 총 라인: 9028줄
 
 ### ./
 
-#### `PROJECT_ANALYSIS.md` (772줄, 47,493B)
+#### `PROJECT_ANALYSIS.md` (1594줄, 87,698B)
 
-#### `main.py` (232줄, 10,192B)
+#### `main.py` (457줄, 19,507B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -316,12 +310,25 @@ pytest
 | `run` | `query: Annotated[str, typer.Option("--query", "...` | `-` | AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다. |
 | `is_port_in_use` | `port: int, host: str` | `bool` | - |
 | `run_server` | `host: Annotated[str, typer.Option(help="서버가 바인딩...` | `-` | FastAPI 오케스트레이터 서버를 실행합니다. |
+| `mcp_list` | `all_servers: Annotated[bool, typer.Option("--al...` | `-` | 등록된 MCP 서버 목록을 표시합니다. |
+| `mcp_add` | `name: Annotated[str, typer.Argument(help="서버 이름...` | `-` | MCP 서버를 레지스트리에 추가합니다. |
+| `mcp_remove` | `name: Annotated[str, typer.Argument(help="제거할 서...` | `-` | MCP 서버를 레지스트리에서 제거합니다. |
+| `mcp_search` | `query: Annotated[str, typer.Argument(help="검색 키...` | `-` | npm/PyPI에서 MCP 서버 패키지를 검색합니다. |
+| `mcp_enable` | `name: Annotated[str, typer.Argument(help="활성화할 ...` | `-` | MCP 서버를 활성화합니다. |
+| `mcp_disable` | `name: Annotated[str, typer.Argument(help="비활성화할...` | `-` | MCP 서버를 비활성화합니다. |
+| `model_status` | `` | `-` | 현재 활성 프로바이더와 모델을 표시합니다. |
+| `model_list` | `provider: Annotated[str, typer.Option("--provid...` | `-` | 프로바이더별 사용 가능한 모델 목록을 조회합니다. |
+| `model_set` | `provider: Annotated[str, typer.Argument(help="프...` | `-` | 활성 프로바이더와 모델을 변경합니다. |
 
-의존성: `httpx`, `orchestrator`, `os`, `re`, `rich`, `socket`, `subprocess`, `time`, `typer`, `typing`
+의존성: `asyncio`, `httpx`, `orchestrator`, `os`, `re`, `rich`, `socket`, `subprocess`, `time`, `typer`
+
+#### `mcp_servers.json` (65줄, 1,862B)
+
+#### `model_config.json` (28줄, 636B)
 
 #### `pytest.ini` (3줄, 37B)
 
-#### `requirements.txt` (16줄, 363B)
+#### `requirements.txt` (17줄, 410B)
 
 #### `start.sh` (3줄, 81B)
 
@@ -371,9 +378,9 @@ pytest
 
 ### mcp_modules/
 
-#### `__init__.py` (9줄, 1,116B)
+#### `__init__.py` (21줄, 2,308B)
 
-의존성: `code_execution_atomic`, `code_execution_composite`, `user_interaction_atomic`, `user_interaction_composite`
+의존성: `code_execution_atomic`, `code_execution_composite`, `file_attributes`, `file_content_operations`, `file_management`, `file_system_composite`, `git_version_control`, `user_interaction_atomic`, `user_interaction_composite`, `web_network_atomic`
 
 #### `code_execution_atomic.py` (489줄, 21,022B)
 > code_execution_atomic.py: AI 에이전트를 위한 레벨 1 원자(Atomic) MCP 핵심 라이브러리  이 모듈은 AI 에이전트가 운영체제, 파일 시스템, 코드 분석 등 기본적인 작업을 수행할 수 있도록 돕는 저수준(low-level)의 원자적 기능들을 제공합니다. 각 함수는 프로덕션 환경에서 사용될 것을 가정하여 보안, 로깅, 예외 처리
@@ -422,21 +429,108 @@ pytest
 
 정의된 MCP: `run_python_script`, `script_path`, `install_python_package`, `package_name`, `uninstall_python_package`, `package_name`, `lint_code_file`, `file_path`, `linter`, `format_code_file`, `file_path`, `get_git_status`, `repo_path`, `clone_git_repository`, `repo_url`...
 
+#### `file_attributes.py` (185줄, 5,326B)
+> file_attributes.py: AI 에이전트를 위한 파일 속성 조회 MCP 라이브러리  이 모듈은 파일과 디렉토리의 메타데이터(존재 여부, 크기, 수정 시간 등)를 조회하는 함수들을 제공합니다.  MCP 서버 대체 가능 여부:   - filesystem MCP 서버의 get_file_info 도구로 일부 대체 가능 (exists, size, mtime
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `path_exists` | `path: str` | `bool` | 경로(파일 또는 디렉토리)가 존재하는지 확인합니다. |
+| `is_file` | `path: str` | `bool` | 경로가 일반 파일인지 확인합니다. |
+| `is_directory` | `path: str` | `bool` | 경로가 디렉토리인지 확인합니다. |
+| `get_file_size` | `path: str` | `int` | 파일 크기를 바이트 단위로 반환합니다. |
+| `get_modification_time` | `path: str` | `datetime` | 파일 또는 디렉토리의 마지막 수정 시간을 반환합니다. |
+| `get_creation_time` | `path: str` | `datetime` | 파일 또는 디렉토리의 생성 시간을 반환합니다. |
+| `get_current_working_directory` | `` | `str` | 현재 작업 디렉토리 경로를 문자열로 반환합니다. |
+
+의존성: `datetime`, `logging`, `os`, `pathlib`, `sys`, `typing`
+
 #### `file_attributes.spec.yaml` (87줄, 3,022B)
 
 정의된 MCP: `file_attributes`, `path_exists`, `path`, `is_file`, `path`, `is_directory`, `path`, `get_file_size`, `path`, `get_modification_time`, `path`, `get_creation_time`, `path`, `get_current_working_directory`
+
+#### `file_content_operations.py` (195줄, 6,690B)
+> file_content_operations.py: AI 에이전트를 위한 파일 내용 읽기/쓰기 MCP 라이브러리  파일의 내용을 읽고 쓰는 기능을 제공합니다. 텍스트 및 바이너리 파일 모두 지원하며, 경로 조작(Path Traversal) 공격을 방지하기 위해 ALLOWED_BASE_PATH 검증이 적용됩니다.  MCP 서버 대체 가능 여부:   - file
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `read_file` | `path: str, encoding: str` | `str` | 파일 내용을 텍스트로 읽어 반환합니다. |
+| `read_binary_file` | `path: str` | `bytes` | 파일 내용을 바이너리로 읽어 bytes 객체로 반환합니다. |
+| `write_file` | `path: str, content: str, encoding: str` | `bool` | 파일에 텍스트 내용을 씁니다. 파일이 없으면 새로 생성하고, 있으면 덮어씁니다. |
+| `write_binary_file` | `path: str, content: bytes` | `bool` | 파일에 바이너리 내용을 씁니다. 파일이 없으면 새로 생성하고, 있으면 덮어씁니다. |
+| `append_to_file` | `path: str, content: str, encoding: str` | `bool` | 파일 끝에 텍스트 내용을 추가합니다. 파일이 없으면 새로 생성합니다. |
+
+의존성: `logging`, `os`, `pathlib`, `sys`
 
 #### `file_content_operations.spec.yaml` (98줄, 3,456B)
 
 정의된 MCP: `file_content_operations`, `read_file`, `path`, `encoding`, `read_binary_file`, `path`, `write_file`, `path`, `content`, `encoding`, `write_binary_file`, `path`, `content`, `append_to_file`, `path`...
 
+#### `file_management.py` (199줄, 7,103B)
+> file_management.py: AI 에이전트를 위한 파일 관리 MCP 라이브러리  파일과 디렉토리의 생성, 목록 조회, 이름 변경, 삭제 등 기본 파일 관리 기능을 제공합니다. 경로 조작(Path Traversal) 공격을 방지하기 위해 ALLOWED_BASE_PATH 검증이 적용됩니다.  MCP 서버 대체 가능 여부:   - filesystem MC
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `create_directory` | `path: str, exist_ok: bool` | `bool` | 지정한 경로에 디렉토리를 생성합니다. 중간 경로도 함께 생성합니다. |
+| `list_directory` | `path: str` | `List[str]` | 지정한 디렉토리의 파일 및 하위 디렉토리 이름 목록을 반환합니다. |
+| `rename` | `source_path: str, new_name: str` | `str` | 파일 또는 디렉토리의 이름을 변경합니다. |
+| `delete_file` | `path: str` | `bool` | 지정한 파일을 삭제합니다. |
+| `delete_empty_directory` | `path: str` | `bool` | 비어 있는 디렉토리를 삭제합니다. |
+
+의존성: `logging`, `os`, `pathlib`, `sys`, `typing`
+
 #### `file_management.spec.yaml` (97줄, 3,801B)
 
 정의된 MCP: `file_management`, `create_directory`, `path`, `exist_ok`, `list_directory`, `path`, `rename`, `source_path`, `new_name`, `delete_file`, `path`, `delete_empty_directory`, `path`
 
+#### `file_system_composite.py` (384줄, 13,885B)
+> file_system_composite.py: AI 에이전트를 위한 복합 파일 시스템 작업 MCP 라이브러리  여러 원자적 파일 작업을 조합하여 검색, 이동, 복사, 텍스트 치환 등 더 복잡한 파일 시스템 작업을 제공합니다.  MCP 서버 대체 가능 여부:   - filesystem MCP 서버의 search_files 도구로 find_files 부분 대체
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `move` | `source: str, dest: str` | `str` | 파일 또는 디렉토리를 다른 위치로 이동합니다. |
+| `copy_directory` | `source_dir: str, dest_dir: str` | `str` | 디렉토리 전체를 재귀적으로 복사합니다. |
+| `find_files` | `directory: str, pattern: str` | `List[str]` | 지정한 디렉토리에서 glob 패턴에 매칭되는 파일을 재귀 탐색합니다. |
+| `find_text_in_files` | `directory: str, text: str` | `List[str]` | 디렉토리 내 모든 텍스트 파일에서 특정 텍스트를 포함하는 파일을 검색합니다. |
+| `find_large_files` | `directory: str, min_size_mb: float` | `List[str]` | 지정한 크기 이상의 파일을 찾아 경로 목록으로 반환합니다. |
+| `read_specific_lines` | `path: str, start_line: int, end_line: int` | `List[str]` | 파일의 특정 범위 줄(1-기반)을 읽어 반환합니다. |
+| `replace_text_in_file` | `path: str, old_text: str, new_text: str` | `bool` | 파일 내 특정 텍스트를 다른 텍스트로 치환합니다. |
+| `get_directory_size` | `directory: str` | `int` | 디렉토리 전체 크기(바이트)를 재귀적으로 계산합니다. |
+| `batch_rename` | `directory: str, pattern: str, new_name_format: str` | `List[str]` | 디렉토리 내 패턴에 매칭되는 파일들을 일괄 이름 변경합니다. |
+| `delete_directory_recursively` | `path: str` | `bool` | 디렉토리를 내용물과 함께 재귀적으로 삭제합니다. |
+
+의존성: `itertools`, `logging`, `os`, `pathlib`, `shutil`, `sys`, `typing`
+
 #### `file_system_composite.spec.yaml` (94줄, 5,443B)
 
 정의된 MCP: `file_system_composite`, `move`, `source, type: str, description: 이동할 원본 경로, required: true}`, `copy_directory`, `find_files`, `find_text_in_files`, `text, type: str, description: 검색할 텍스트, required: true}`, `find_large_files`, `read_specific_lines`, `path, type: str, description: 읽을 파일 경로, required: true}`, `replace_text_in_file`, `path, type: str, description: 수정할 파일 경로, required: true}`, `get_directory_size`, `batch_rename`, `delete_directory_recursively`...
+
+#### `git_version_control.py` (501줄, 15,573B)
+> git_version_control.py: AI 에이전트를 위한 Git 버전 관리 MCP 라이브러리  Git 저장소의 상태 조회, 커밋, 브랜치 관리, 원격 저장소 연동 등 다양한 Git 작업을 수행하는 함수를 제공합니다.  MCP 서버 대체 가능 여부:   - git MCP 서버로 대부분의 기능 대체 가능   - git_revert_commit, git_
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `git_status` | `repo_path: Optional[str]` | `str` | Git 저장소의 현재 상태를 반환합니다. |
+| `git_add` | `file_path: str, repo_path: Optional[str]` | `str` | 파일 또는 디렉토리를 스테이징 영역에 추가합니다. |
+| `git_commit` | `message: str, repo_path: Optional[str]` | `str` | 스테이징된 변경사항을 커밋합니다. |
+| `git_push` | `remote: str, branch: str, repo_path: Optional[str]` | `str` | 로컬 브랜치를 원격 저장소에 푸시합니다. |
+| `git_pull` | `remote: str, branch: str, repo_path: Optional[str]` | `str` | 원격 저장소에서 최신 변경사항을 가져와 병합합니다. |
+| `git_log` | `limit: int, repo_path: Optional[str]` | `str` | 커밋 로그를 한 줄 형식으로 반환합니다. |
+| `git_diff` | `file_path: Optional[str], repo_path: Optional[str]` | `str` | 작업 디렉토리와 인덱스의 차이를 반환합니다. |
+| `git_clone` | `url: str, dest_path: Optional[str]` | `str` | 원격 Git 저장소를 로컬에 복제합니다. |
+| `git_init` | `repo_path: Optional[str]` | `str` | 현재 또는 지정한 디렉토리에 Git 저장소를 초기화합니다. |
+| `git_create_branch` | `branch_name: str, repo_path: Optional[str]` | `str` | 새 브랜치를 생성합니다. |
+| `git_list_branches` | `repo_path: Optional[str]` | `List[str]` | 로컬 및 원격 브랜치 목록을 반환합니다. |
+| `git_checkout` | `branch_name: str, repo_path: Optional[str]` | `str` | 지정한 브랜치로 전환합니다. |
+| `git_merge` | `branch_name: str, repo_path: Optional[str]` | `str` | 지정한 브랜치를 현재 브랜치에 병합합니다. |
+| `git_stash` | `repo_path: Optional[str]` | `str` | 작업 디렉토리의 변경사항을 임시 저장(stash)합니다. |
+| `git_stash_pop` | `repo_path: Optional[str]` | `str` | 가장 최근의 stash를 꺼내어 작업 디렉토리에 적용합니다. |
+| `git_tag` | `tag_name: str, message: Optional[str], repo_pat...` | `str` | 태그를 생성합니다. |
+| `git_remote_add` | `name: str, url: str, repo_path: Optional[str]` | `str` | 원격 저장소를 추가합니다. |
+| `git_fetch` | `remote: str, repo_path: Optional[str]` | `str` | 원격 저장소에서 최신 정보를 가져옵니다 (병합 없음). |
+| `git_revert_commit` | `commit_hash: str, repo_path: Optional[str]` | `str` | 지정한 커밋을 되돌리는 새 커밋을 생성합니다. |
+| `git_show` | `commit_hash: str, repo_path: Optional[str]` | `str` | 특정 커밋의 상세 정보와 변경 내용을 반환합니다. |
+
+의존성: `logging`, `os`, `re`, `subprocess`, `sys`, `typing`
 
 #### `git_version_control.spec.yaml` (267줄, 8,991B)
 
@@ -568,6 +662,362 @@ pytest
 
 의존성: `code_execution_composite`, `pytest`, `subprocess`, `unittest`
 
+#### `test_file_attributes.py` (103줄, 3,027B)
+> test_file_attributes.py: file_attributes 모듈에 대한 단위 테스트
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `sample_file` | `tmp_path` | `-` | 테스트용 임시 파일 생성 |
+| `sample_dir` | `tmp_path` | `-` | 테스트용 임시 디렉토리 생성 |
+
+**class `TestPathExists`** (line 30)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_file` | `self, sample_file` | - |
+| `test_success_directory` | `self, sample_dir` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestIsFile`** (line 41)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, sample_file` | - |
+| `test_failure_directory` | `self, sample_dir` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestIsDirectory`** (line 52)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, sample_dir` | - |
+| `test_failure_file` | `self, sample_file` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestGetFileSize`** (line 63)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, sample_file` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_directory` | `self, sample_dir` | - |
+
+**class `TestGetModificationTime`** (line 78)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, sample_file` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestGetCreationTime`** (line 88)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, sample_file` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestGetCurrentWorkingDirectory`** (line 98)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+
+의존성: `datetime`, `pathlib`, `pytest`
+
+#### `test_file_content_operations.py` (116줄, 3,815B)
+> test_file_content_operations.py: file_content_operations 모듈에 대한 단위 테스트
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `patch_allowed_base` | `tmp_path, monkeypatch` | `-` | ALLOWED_BASE_PATH를 tmp_path로 교체 |
+
+**class `TestReadFile`** (line 19)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestReadBinaryFile`** (line 40)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+
+**class `TestWriteFile`** (line 59)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_create` | `self, tmp_path` | - |
+| `test_success_overwrite` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestWriteBinaryFile`** (line 82)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+
+**class `TestAppendToFile`** (line 95)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_existing` | `self, tmp_path` | - |
+| `test_success_creates_new` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+의존성: `pathlib`, `pytest`
+
+#### `test_file_management.py` (139줄, 4,602B)
+> test_file_management.py: file_management 모듈에 대한 단위 테스트
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `patch_allowed_base` | `tmp_path, monkeypatch` | `-` | ALLOWED_BASE_PATH를 tmp_path로 교체하여 실제 파일시스템 격리 |
+
+**class `TestCreateDirectory`** (line 19)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_success_nested` | `self, tmp_path` | - |
+| `test_success_exist_ok` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self, tmp_path` | - |
+
+**class `TestListDirectory`** (line 41)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_empty_directory` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_not_a_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestRename`** (line 69)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_file` | `self, tmp_path` | - |
+| `test_failure_separator_in_name` | `self, tmp_path` | - |
+| `test_failure_backslash_in_name` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestDeleteFile`** (line 95)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_is_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestDeleteEmptyDirectory`** (line 117)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_not_a_directory` | `self, tmp_path` | - |
+| `test_failure_not_empty` | `self, tmp_path` | - |
+
+의존성: `pathlib`, `pytest`
+
+#### `test_file_system_composite.py` (206줄, 7,152B)
+> test_file_system_composite.py: file_system_composite 모듈에 대한 단위 테스트
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `patch_allowed_base` | `tmp_path, monkeypatch` | `-` | ALLOWED_BASE_PATH를 tmp_path로 교체 |
+
+**class `TestMove`** (line 19)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_file` | `self, tmp_path` | - |
+| `test_failure_source_not_found` | `self, tmp_path` | - |
+| `test_failure_path_traversal_source` | `self` | - |
+
+**class `TestCopyDirectory`** (line 37)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_not_directory` | `self, tmp_path` | - |
+| `test_failure_nonexistent_source` | `self, tmp_path` | - |
+
+**class `TestFindFiles`** (line 58)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestFindTextInFiles`** (line 77)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_skips_binary` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestFindLargeFiles`** (line 96)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_empty_result` | `self, tmp_path` | - |
+
+**class `TestReadSpecificLines`** (line 112)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_invalid_range` | `self, tmp_path` | - |
+| `test_failure_zero_start` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestReplaceTextInFile`** (line 137)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_no_change` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+
+**class `TestGetDirectorySize`** (line 156)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_empty_directory` | `self, tmp_path` | - |
+
+**class `TestBatchRename`** (line 170)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_no_placeholder` | `self, tmp_path` | - |
+
+**class `TestDeleteDirectoryRecursively`** (line 185)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_nonexistent` | `self, tmp_path` | - |
+| `test_failure_not_directory` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+의존성: `pathlib`, `pytest`
+
+#### `test_git_version_control.py` (182줄, 6,128B)
+> test_git_version_control.py: git_version_control 모듈에 대한 단위 테스트  실제 git 명령어 실행을 방지하기 위해 _run_git을 mock합니다. 입력값 검증(URL, branch name, commit hash) 위주로 테스트합니다.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `mock_run_git` | `` | `-` | _run_git을 mock으로 교체하는 fixture |
+
+**class `TestGitStatus`** (line 24)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_with_repo_path` | `self, mock_run_git` | - |
+
+**class `TestGitCommit`** (line 35)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_empty_message` | `self, mock_run_git` | - |
+| `test_failure_whitespace_only` | `self, mock_run_git` | - |
+
+**class `TestGitPush`** (line 49)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_invalid_branch` | `self, mock_run_git` | - |
+| `test_valid_branch_with_slash` | `self, mock_run_git` | - |
+
+**class `TestGitPull`** (line 64)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_invalid_branch` | `self, mock_run_git` | - |
+
+**class `TestGitLog`** (line 74)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+
+**class `TestGitClone`** (line 81)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_https` | `self, mock_run_git` | - |
+| `test_success_git_at` | `self, mock_run_git` | - |
+| `test_failure_invalid_url` | `self, mock_run_git` | - |
+| `test_failure_bare_path` | `self, mock_run_git` | - |
+
+**class `TestGitCreateBranch`** (line 99)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_invalid_name` | `self, mock_run_git` | - |
+| `test_failure_empty_name` | `self, mock_run_git` | - |
+
+**class `TestGitListBranches`** (line 113)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_parses_output` | `self` | - |
+| `test_empty_output` | `self` | - |
+
+**class `TestGitRevertCommit`** (line 130)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_success_full_hash` | `self, mock_run_git` | - |
+| `test_failure_invalid_hash_short` | `self, mock_run_git` | - |
+| `test_failure_invalid_hash_non_hex` | `self, mock_run_git` | - |
+
+**class `TestGitShow`** (line 149)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_invalid_hash` | `self, mock_run_git` | - |
+
+**class `TestGitTag`** (line 159)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_lightweight` | `self, mock_run_git` | - |
+| `test_success_annotated` | `self, mock_run_git` | - |
+| `test_failure_invalid_tag` | `self, mock_run_git` | - |
+
+**class `TestGitRemoteAdd`** (line 175)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, mock_run_git` | - |
+| `test_failure_invalid_url` | `self, mock_run_git` | - |
+
+의존성: `pytest`, `subprocess`, `unittest`
+
 #### `test_user_interaction_atomic.py` (145줄, 6,002B)
 > test_user_interaction_atomic.py  'interaction_utils.py' 모듈의 MCP 함수들에 대한 단위 테스트.
 
@@ -623,6 +1073,89 @@ pytest
 
 의존성: `os`, `pathlib`, `pytest`, `unittest`
 
+#### `test_web_network_atomic.py` (190줄, 7,397B)
+> test_web_network_atomic.py: web_network_atomic 모듈에 대한 단위 테스트  httpx, socket, subprocess 등을 mock하여 실제 네트워크 요청 없이 테스트합니다.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `patch_allowed_base` | `tmp_path, monkeypatch` | `-` | ALLOWED_BASE_PATH를 tmp_path로 교체 |
+
+**class `TestValidateUrl`** (line 23)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_https` | `self` | - |
+| `test_success_http` | `self` | - |
+| `test_failure_ftp_scheme` | `self` | - |
+| `test_failure_private_ip_10` | `self` | - |
+| `test_failure_private_ip_192` | `self` | - |
+| `test_failure_loopback` | `self` | - |
+
+**class `TestFetchUrlContent`** (line 48)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+| `test_failure_invalid_url` | `self` | - |
+
+**class `TestApiGetRequest`** (line 63)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+| `test_failure_ssrf` | `self` | - |
+
+**class `TestApiPostRequest`** (line 78)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+
+**class `TestGetHttpStatus`** (line 89)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success_200` | `self` | - |
+| `test_failure_returns_minus_one` | `self` | - |
+| `test_failure_invalid_url` | `self` | - |
+
+**class `TestResolveDns`** (line 110)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+| `test_failure_returns_empty` | `self` | - |
+
+**class `TestPingHost`** (line 123)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self` | - |
+| `test_failure_private_ip` | `self` | - |
+| `test_failure_invalid_hostname` | `self` | - |
+
+**class `TestDownloadFileFromUrl`** (line 143)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_success` | `self, tmp_path` | - |
+| `test_failure_path_traversal` | `self` | - |
+
+**class `TestFetchDynamicContent`** (line 163)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_failure_selenium_not_installed` | `self` | - |
+
+**class `TestSendEmailSmtp`** (line 171)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_failure_missing_env` | `self, monkeypatch` | - |
+| `test_success` | `self, monkeypatch` | - |
+
+의존성: `httpx`, `pytest`, `socket`, `unittest`
+
 #### `user_interaction_atomic.py` (291줄, 11,084B)
 > user_interaction_atomic.py  사용자 상호작용을 위한 원자적(Atomic) MCP(Mission Control Primitives) 모음. 이 모듈은 터미널 환경에서 사용자로부터 입력을 받거나 정보를 표시하는 다양한 유틸리티 함수를 제공합니다.
 
@@ -677,6 +1210,30 @@ pytest
 
 정의된 MCP: `ask_user_for_input`, `question`, `ask_for_multiline_input`, `prompt`, `ask_user_for_confirmation`, `question`, `ask_for_password`, `prompt`, `show_message`, `message`, `display_table`, `data`, `headers`, `show_progress_bar`, `total`...
 
+#### `web_network_atomic.py` (648줄, 21,304B)
+> web_network_atomic.py: AI 에이전트를 위한 웹/네트워크 원자 작업 MCP 라이브러리  HTTP 요청, DNS 조회, 파일 다운로드, RSS 파싱, 이메일 발송, SSL 인증서 조회 등 다양한 네트워크 기능을 제공합니다.  MCP 서버 대체 가능 여부:   - fetch MCP 서버의 fetch 도구로 fetch_url_content, a
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `fetch_url_content` | `url: str, timeout: int` | `str` | URL에서 텍스트 콘텐츠를 가져옵니다. |
+| `download_file_from_url` | `url: str, local_path: str, timeout: int` | `bool` | URL에서 파일을 스트리밍으로 다운로드하여 로컬에 저장합니다. |
+| `api_get_request` | `url: str, params: Optional[Dict[str, Any]], hea...` | `Any` | HTTP GET 요청을 보내고 JSON 응답을 반환합니다. |
+| `api_post_request` | `url: str, data: Optional[Dict[str, Any]], json_...` | `Any` | HTTP POST 요청을 보내고 JSON 응답을 반환합니다. |
+| `api_put_request` | `url: str, json_body: Optional[Dict[str, Any]], ...` | `Any` | HTTP PUT 요청을 보내고 JSON 응답을 반환합니다. |
+| `api_delete_request` | `url: str, headers: Optional[Dict[str, str]], ti...` | `Any` | HTTP DELETE 요청을 보내고 JSON 응답을 반환합니다. |
+| `get_http_status` | `url: str, timeout: int` | `int` | URL의 HTTP 상태 코드를 반환합니다. |
+| `get_http_headers` | `url: str, timeout: int` | `Dict[str, str]` | URL의 HTTP 응답 헤더를 딕셔너리로 반환합니다. |
+| `ping_host` | `host: str, count: int` | `str` | 호스트에 ping을 보내고 결과를 반환합니다. |
+| `resolve_dns` | `hostname: str` | `str` | 호스트명의 IP 주소를 DNS 조회로 반환합니다. |
+| `parse_rss_feed` | `url: str, timeout: int` | `List[Dict[str, str]]` | RSS/Atom 피드 URL을 파싱하여 항목 목록을 반환합니다. |
+| `send_email_smtp` | `to_address: str, subject: str, body: str` | `bool` | SMTP를 통해 이메일을 발송합니다. |
+| `get_ssl_certificate_info` | `hostname: str, port: int` | `Dict[str, Any]` | 호스트의 SSL 인증서 정보를 반환합니다. |
+| `fetch_dynamic_content` | `url: str` | `str` | Selenium을 사용하여 JavaScript가 렌더링된 동적 웹 페이지 내용을 가져옵니다. |
+| `ftp_upload_file` | `ftp_host: str, ftp_user: str, ftp_pass: str, lo...` | `bool` | FTP(TLS)를 통해 로컬 파일을 원격 서버에 업로드합니다. |
+| `ftp_download_file` | `ftp_host: str, ftp_user: str, ftp_pass: str, re...` | `bool` | FTP(TLS)를 통해 원격 파일을 로컬에 다운로드합니다. |
+
+의존성: `email`, `feedparser`, `ftplib`, `httpx`, `ipaddress`, `logging`, `os`, `pathlib`, `re`, `selenium`
+
 #### `web_network_atomic.spec.yaml` (292줄, 10,297B)
 
 정의된 MCP: `fetch_url_content`, `url`, `timeout`, `ValueError`, `requests.exceptions.RequestException`, `download_file_from_url`, `url`, `save_path`, `timeout`, `ValueError`, `requests.exceptions.RequestException`, `IOError`, `api_get_request`, `url`, `headers`...
@@ -687,7 +1244,7 @@ pytest
 
 의존성: `logging`
 
-#### `api.py` (227줄, 9,127B)
+#### `api.py` (235줄, 9,438B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -695,11 +1252,16 @@ pytest
 | `async decide_and_act` | `request: AgentRequest` | `-` | (수정) ReAct 루프의 핵심. |
 | `async execute_group` | `request: AgentRequest` | `-` | (수정) 저장된 '단일' 그룹을 실행합니다. |
 
-의존성: `contextlib`, `datetime`, `fastapi`, `gemini_client`, `inspect`, `models`, `os`, `re`
+의존성: `contextlib`, `datetime`, `fastapi`, `gemini_client`, `inspect`, `logging`, `models`, `os`, `re`
 
-#### `config.py` (69줄, 1,772B)
+#### `config.py` (144줄, 4,143B)
 
-의존성: `os`
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `load_mcp_config` | `` | `tuple` | MCP 서버 설정을 로드합니다. |
+| `load_model_config` | `` | `tuple` | model_config.json에서 현재 활성 프로바이더/모델을 읽습니다. |
+
+의존성: `json`, `logging`, `model_manager`, `os`, `typing`
 
 #### `gemini_client.py` (252줄, 8,662B)
 
@@ -721,6 +1283,43 @@ pytest
 | `list_conversations` | `` | `List[Dict[str, Any]]` | 저장된 모든 대화의 메타데이터 목록을 반환합니다. |
 
 의존성: `datetime`, `json`, `os`, `re`, `typing`, `uuid`
+
+#### `mcp_manager.py` (267줄, 8,889B)
+> MCP 서버 레지스트리 관리 모듈.  서버 등록/제거/검색, 도구 중복 분석, 하드코딩 마이그레이션 등을 담당합니다.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `load_registry` | `path: Optional[str]` | `Dict[str, Any]` | JSON 레지스트리 파일을 읽어 반환합니다. |
+| `save_registry` | `registry: Dict[str, Any], path: Optional[str]` | `None` | 레지스트리를 JSON 파일에 저장합니다. |
+| `get_servers` | `registry: Dict[str, Any], enabled_only: bool` | `List[Dict[str, Any]]` | 서버 목록을 반환합니다. |
+| `add_server` | `registry: Dict[str, Any], name: str, package: s...` | `Dict[str, Any]` | 서버를 레지스트리에 추가합니다. 이름 중복 시 ValueError. |
+| `remove_server` | `registry: Dict[str, Any], name: str` | `bool` | 서버를 레지스트리에서 제거합니다. 제거 성공 시 True. |
+| `enable_server` | `registry: Dict[str, Any], name: str, enabled: bool` | `bool` | 서버를 활성/비활성 전환합니다. 성공 시 True. |
+| `search_npm` | `query: str` | `List[Dict[str, str]]` | npm에서 MCP 서버 패키지를 검색합니다. |
+| `search_pip` | `query: str` | `List[Dict[str, str]]` | PyPI JSON API로 패키지를 검색합니다. |
+| `search_packages` | `query: str, manager: str` | `Dict[str, List[Dict[str, str]]]` | npm/pip 통합 검색 결과를 반환합니다. |
+| `async probe_server_tools` | `server_config: Dict[str, Any]` | `List[Dict[str, str]]` | 서버에 임시 연결하여 도구 목록을 조회합니다. |
+| `get_tool_overlap_report` | `new_tools: List[Dict[str, str]], existing_tools...` | `List[Dict[str, str]]` | 새 도구와 기존 도구의 중복을 분석합니다. |
+| `migrate_from_hardcoded` | `path: Optional[str]` | `Dict[str, Any]` | 하드코딩된 config 값을 JSON 레지스트리로 변환합니다. |
+
+의존성: `contextlib`, `datetime`, `httpx`, `json`, `logging`, `mcp`, `os`, `subprocess`, `typing`
+
+#### `model_manager.py` (223줄, 7,352B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `load_config` | `path: str` | `Dict[str, Any]` | - |
+| `save_config` | `config: Dict[str, Any], path: str` | `None` | - |
+| `get_active_model` | `config: Optional[Dict[str, Any]]` | `tuple` | - |
+| `set_active_model` | `provider: str, model: str, config: Optional[Dic...` | `Dict[str, Any]` | - |
+| `list_providers` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, Any]]` | - |
+| `async fetch_models_gemini` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
+| `async fetch_models_claude` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
+| `async fetch_models_openai` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
+| `async fetch_models_grok` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
+| `async fetch_models` | `provider: str, config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
+
+의존성: `google`, `httpx`, `json`, `logging`, `os`, `typing`
 
 #### `models.py` (42줄, 1,633B)
 
@@ -806,7 +1405,112 @@ pytest
 
 의존성: `json`, `models`, `pytest`, `unittest`
 
-#### `test_tool_registry.py` (78줄, 2,468B)
+#### `test_mcp_manager.py` (193줄, 7,356B)
+> orchestrator/mcp_manager.py에 대한 단위 테스트
+
+**class `TestRegistryIO`** (line 15)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_load_nonexistent_returns_empty` | `self` | 존재하지 않는 파일 로드 시 빈 레지스트리 반환 |
+| `test_save_and_load_roundtrip` | `self` | 저장 후 로드하면 동일한 데이터 반환 |
+
+**class `TestAddRemoveServer`** (line 46)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_add_server` | `self` | 서버 추가 성공 |
+| `test_add_duplicate_raises` | `self` | 중복 이름 추가 시 ValueError |
+| `test_remove_server` | `self` | 서버 제거 성공 |
+| `test_remove_nonexistent` | `self` | 존재하지 않는 서버 제거 시 False |
+| `test_enable_disable` | `self` | 활성/비활성 토글 |
+| `test_enable_nonexistent` | `self` | 존재하지 않는 서버 활성화 시 False |
+| `test_get_servers_enabled_only` | `self` | enabled_only=True 시 비활성 서버 제외 |
+| `test_get_servers_all` | `self` | enabled_only=False 시 모든 서버 반환 |
+
+**class `TestSearchPackages`** (line 110)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_search_npm_only` | `self, mock_npm` | manager='npm'이면 npm만 검색 |
+| `test_search_pip_only` | `self, mock_pip` | manager='pip'이면 pip만 검색 |
+| `test_search_all` | `self, mock_pip, mock_npm` | manager='all'이면 둘 다 검색 |
+
+**class `TestToolOverlap`** (line 139)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_overlap_found` | `self` | 중복 도구가 있으면 리포트에 포함 |
+| `test_no_overlap` | `self` | 중복이 없으면 빈 리스트 |
+
+**class `TestMigration`** (line 159)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_migrate_creates_json` | `self` | 마이그레이션 시 JSON 파일 생성 |
+
+**class `TestResolveArgs`** (line 179)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_dot_replaced` | `self` | '.'가 cwd로 치환됨 |
+| `test_cwd_replaced` | `self` | '$CWD'가 cwd로 치환됨 |
+| `test_other_args_unchanged` | `self` | 다른 인자는 변경 없음 |
+
+의존성: `json`, `os`, `pytest`, `tempfile`, `unittest`
+
+#### `test_model_manager.py` (259줄, 10,452B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `tmp_config` | `tmp_path` | `-` | 임시 model_config.json 경로를 반환합니다. |
+
+**class `TestConfigIO`** (line 50)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_load_config_from_file` | `self, tmp_config` | - |
+| `test_load_config_default_when_missing` | `self, tmp_path` | - |
+| `test_save_and_reload` | `self, tmp_path` | - |
+
+**class `TestSetActiveModel`** (line 72)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_set_active_model` | `self, tmp_config` | - |
+| `test_set_unknown_provider_raises` | `self, tmp_config` | - |
+| `test_get_active_model` | `self, tmp_config` | - |
+
+**class `TestListProviders`** (line 95)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_list_providers_with_keys` | `self, tmp_config` | - |
+| `test_list_providers_without_keys` | `self, tmp_config` | - |
+
+**class `TestFetchModels`** (line 119)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_fetch_models_gemini_mock` | `self, tmp_config` | - |
+| `test_fetch_models_claude_mock` | `self, tmp_config` | - |
+| `test_fetch_models_openai_mock` | `self, tmp_config` | - |
+| `test_fetch_models_grok_mock` | `self, tmp_config` | - |
+| `test_fetch_models_dispatcher` | `self, tmp_config` | - |
+| `test_fetch_models_unknown_provider` | `self` | - |
+
+**class `TestFetchModelsNoApiKey`** (line 232)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_gemini_no_key` | `self, tmp_config` | - |
+| `test_claude_no_key` | `self, tmp_config` | - |
+| `test_openai_no_key` | `self, tmp_config` | - |
+| `test_grok_no_key` | `self, tmp_config` | - |
+
+의존성: `json`, `os`, `pytest`, `pytest_asyncio`, `unittest`
+
+#### `test_tool_registry.py` (159줄, 5,741B)
 > orchestrator/tool_registry.py에 대한 단위 테스트
 
 **class `TestLoadLocalModules`** (line 13)
@@ -827,7 +1531,20 @@ pytest
 | `test_alias_resolution` | `self` | 별칭으로 MCP 도구 검색 |
 | `test_nonexistent_tool` | `self` | 존재하지 않는 도구는 None 반환 |
 
-**class `TestGetAllToolDescriptions`** (line 74)
+**class `TestToolProviders`** (line 74)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | - |
+| `test_get_tool_providers_empty` | `self` | 제공자가 없으면 빈 리스트 |
+| `test_get_tool_providers_single` | `self` | 단일 제공자 반환 |
+| `test_get_tool_providers_multiple` | `self` | 다중 제공자 반환 |
+| `test_set_tool_preference_valid` | `self` | 유효한 서버로 선호 설정 성공 |
+| `test_set_tool_preference_invalid_server` | `self` | 존재하지 않는 서버로 선호 설정 실패 |
+| `test_get_duplicate_tools` | `self` | 2개 이상 서버가 제공하는 도구만 반환 |
+| `test_get_tool_uses_preference` | `self` | 선호 서버가 설정되면 해당 세션 사용 |
+
+**class `TestGetAllToolDescriptions`** (line 155)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -835,13 +1552,16 @@ pytest
 
 의존성: `importlib`, `pytest`, `unittest`
 
-#### `tool_registry.py` (165줄, 5,475B)
+#### `tool_registry.py` (223줄, 7,726B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `async initialize` | `` | `-` | 모든 로컬 모듈과 MCP 서버를 초기화합니다. |
 | `async shutdown` | `` | `-` | MCP 서버 연결을 정리합니다. |
 | `get_tool` | `name: str` | `Optional[Callable]` | 이름으로 도구 함수를 가져옵니다. |
+| `get_tool_providers` | `name: str` | `List[dict]` | 해당 도구를 제공하는 모든 서버 정보를 반환합니다. |
+| `set_tool_preference` | `tool_name: str, server_name: str` | `bool` | 특정 도구의 선호 서버를 설정합니다. |
+| `get_duplicate_tools` | `` | `Dict[str, List[str]]` | 2개 이상의 서버가 제공하는 도구 목록을 반환합니다. |
 | `get_all_tool_descriptions` | `` | `Dict[str, str]` | 모든 도구(로컬 + MCP)의 이름과 설명을 반환합니다. |
 
 의존성: `contextlib`, `importlib`, `inspect`, `logging`, `mcp`, `os`, `typing`
@@ -855,11 +1575,20 @@ pytest
 ## 12. 모듈 간 의존성 맵 (자동 생성)
 
 ```
-  main.py → orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation
+  main.py → orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.mcp_manager, orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model, orchestrator.tool_registry.TOOL_DESCRIPTIONS
   test_code_execution_atomic.py → .code_execution_atomic
+  test_file_attributes.py → .file_attributes
+  test_file_content_operations.py → .file_content_operations
+  test_file_management.py → .file_management
+  test_file_system_composite.py → .file_system_composite
+  test_git_version_control.py → .git_version_control
   test_user_interaction_composite.py → .user_interaction_composite
+  test_web_network_atomic.py → .web_network_atomic
   api.py → .history_manager, .tool_registry
+  mcp_manager.py → .config
   test_gemini_client.py → .gemini_client
+  test_mcp_manager.py → .mcp_manager
+  test_model_manager.py → .model_manager
   test_tool_registry.py → .config, .tool_registry
   tool_registry.py → .config
 ```

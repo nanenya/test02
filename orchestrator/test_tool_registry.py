@@ -71,6 +71,87 @@ class TestGetTool:
         assert tr.get_tool("no_such_tool_xyz") is None
 
 
+class TestToolProviders:
+    def setup_method(self):
+        tr.TOOLS.clear()
+        tr.TOOL_DESCRIPTIONS.clear()
+        tr._mcp_tools.clear()
+        tr._tool_providers.clear()
+        tr._tool_server_preferences.clear()
+
+    def test_get_tool_providers_empty(self):
+        """제공자가 없으면 빈 리스트"""
+        assert tr.get_tool_providers("nonexistent") == []
+
+    def test_get_tool_providers_single(self):
+        """단일 제공자 반환"""
+        session_mock = MagicMock()
+        tr._tool_providers["read_file"] = [
+            {"server": "filesystem", "session": session_mock, "description": "read"}
+        ]
+        result = tr.get_tool_providers("read_file")
+        assert len(result) == 1
+        assert result[0]["server"] == "filesystem"
+
+    def test_get_tool_providers_multiple(self):
+        """다중 제공자 반환"""
+        s1, s2 = MagicMock(), MagicMock()
+        tr._tool_providers["read_file"] = [
+            {"server": "fs1", "session": s1, "description": "read1"},
+            {"server": "fs2", "session": s2, "description": "read2"},
+        ]
+        result = tr.get_tool_providers("read_file")
+        assert len(result) == 2
+
+    def test_set_tool_preference_valid(self):
+        """유효한 서버로 선호 설정 성공"""
+        session_mock = MagicMock()
+        tr._tool_providers["read_file"] = [
+            {"server": "fs1", "session": session_mock, "description": "read"},
+            {"server": "fs2", "session": session_mock, "description": "read"},
+        ]
+        assert tr.set_tool_preference("read_file", "fs2") is True
+        assert tr._tool_server_preferences["read_file"] == "fs2"
+
+    def test_set_tool_preference_invalid_server(self):
+        """존재하지 않는 서버로 선호 설정 실패"""
+        tr._tool_providers["read_file"] = [
+            {"server": "fs1", "session": MagicMock(), "description": "read"},
+        ]
+        assert tr.set_tool_preference("read_file", "nonexistent") is False
+
+    def test_get_duplicate_tools(self):
+        """2개 이상 서버가 제공하는 도구만 반환"""
+        s1, s2 = MagicMock(), MagicMock()
+        tr._tool_providers["read_file"] = [
+            {"server": "fs1", "session": s1, "description": "r1"},
+            {"server": "fs2", "session": s2, "description": "r2"},
+        ]
+        tr._tool_providers["unique_tool"] = [
+            {"server": "fs1", "session": s1, "description": "u"},
+        ]
+        dups = tr.get_duplicate_tools()
+        assert "read_file" in dups
+        assert "unique_tool" not in dups
+        assert dups["read_file"] == ["fs1", "fs2"]
+
+    def test_get_tool_uses_preference(self):
+        """선호 서버가 설정되면 해당 세션 사용"""
+        s1, s2 = MagicMock(), MagicMock()
+        tr._mcp_tools["read_file"] = {
+            "session": s1, "server": "fs1",
+            "description": "read", "input_schema": {},
+        }
+        tr._tool_providers["read_file"] = [
+            {"server": "fs1", "session": s1, "description": "r1"},
+            {"server": "fs2", "session": s2, "description": "r2"},
+        ]
+        tr._tool_server_preferences["read_file"] = "fs2"
+        wrapper = tr.get_tool("read_file")
+        assert wrapper is not None
+        assert callable(wrapper)
+
+
 class TestGetAllToolDescriptions:
     def test_returns_dict(self):
         """반환 타입이 dict"""

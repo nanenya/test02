@@ -65,9 +65,14 @@ class TestExecutePythonCode:
             mcp.execute_python_code("result = 1 + 1")
 
     def test_edge_case_syntax_error(self):
-        """엣지 케이스: 문법 오류가 있는 코드"""
-        with pytest.raises(SyntaxError):
+        """엣지 케이스: 문법 오류가 있는 코드 (subprocess에서 RuntimeError로 래핑)"""
+        with pytest.raises(RuntimeError):
             mcp.execute_python_code("result = 1 +", sandboxed=True)
+
+    def test_edge_case_timeout(self):
+        """엣지 케이스: 코드 실행 시간 초과"""
+        with pytest.raises(TimeoutError):
+            mcp.execute_python_code("import time; time.sleep(5); result = 1", sandboxed=True, timeout=1)
 
 class TestReadCodeFile:
     # def test_success(self, temp_file):

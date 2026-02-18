@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "active_provider": "gemini",
+  "active_model": "gemini-2.0-flash",
+  "providers": {
+    "gemini": {
+      "enabled": true,
+      "api_key_env": "AIzaSyAjby5KDLBUCgqS6YGC61f3e4okFHQQAHc",
+      "fallback_env": "GOOGLE_API_KEY",
+      "default_model": "gemini-2.0-flash"
+    },
+    "claude": {
+      "enabled": true,
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "default_model": ""
+    },
+    "openai": {
+      "enabled": true,
+      "api_key_env": "OPENAI_API_KEY",
+      "default_model": ""
+    },
+    "grok": {
+      "enabled": true,
+      "api_key_env": "XAI_API_KEY",
+      "default_model": ""
+    }
+  }
+}

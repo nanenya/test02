@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "servers": [
+    {
+      "name": "filesystem",
+      "package": "@modelcontextprotocol/server-filesystem",
+      "package_manager": "npm",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "env": null,
+      "enabled": true,
+      "added_at": "2026-02-18",
+      "description": "MCP filesystem server for file operations"
+    },
+    {
+      "name": "git",
+      "package": "mcp-server-git",
+      "package_manager": "pip",
+      "command": "mcp-server-git",
+      "args": [],
+      "env": null,
+      "enabled": true,
+      "added_at": "2026-02-18",
+      "description": "MCP git server for version control operations"
+    },
+    {
+      "name": "fetch",
+      "package": "mcp-server-fetch",
+      "package_manager": "pip",
+      "command": "mcp-server-fetch",
+      "args": [],
+      "env": null,
+      "enabled": true,
+      "added_at": "2026-02-18",
+      "description": "MCP fetch server for HTTP requests"
+    }
+  ],
+  "tool_name_aliases": {
+    "read_file": "read_file",
+    "write_file": "write_file",
+    "create_directory": "create_directory",
+    "list_directory": "list_directory",
+    "move": "move_file",
+    "find_files": "search_files",
+    "get_file_size": "get_file_info",
+    "path_exists": "get_file_info",
+    "is_file": "get_file_info",
+    "is_directory": "get_file_info",
+    "git_status": "git_status",
+    "git_add": "git_add",
+    "git_commit": "git_commit",
+    "git_push": "git_push",
+    "git_pull": "git_pull",
+    "git_log": "git_log",
+    "git_diff": "git_diff",
+    "git_clone": "git_clone",
+    "git_init": "git_init",
+    "git_create_branch": "git_create_branch",
+    "git_list_branches": "git_list_branches",
+    "fetch_url_content": "fetch",
+    "api_get_request": "fetch",
+    "api_post_request": "fetch",
+    "download_file_from_url": "fetch"
+  }
+}

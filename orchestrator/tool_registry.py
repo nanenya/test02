@@ -6,7 +6,7 @@ import os
 import importlib
 import inspect
 import logging
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, List, Optional
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
@@ -22,6 +22,10 @@ TOOL_DESCRIPTIONS: Dict[str, str] = {}
 _exit_stack: Optional[AsyncExitStack] = None
 _mcp_sessions: Dict[str, ClientSession] = {}
 _mcp_tools: Dict[str, dict] = {}  # tool_name -> {"session": session, "description": str}
+
+# 다중 제공자 추적
+_tool_providers: Dict[str, List[dict]] = {}  # tool_name -> [{"server": name, "session": session, "description": str}]
+_tool_server_preferences: Dict[str, str] = {}  # tool_name -> preferred server_name
 
 
 def _load_local_modules():
@@ -63,13 +67,25 @@ async def _connect_mcp_server(exit_stack: AsyncExitStack, server_config: dict):
 
         response = await session.list_tools()
         for tool in response.tools:
-            _mcp_tools[tool.name] = {
+            tool_entry = {
                 "session": session,
                 "server": server_name,
                 "description": tool.description or tool.name,
                 "input_schema": tool.inputSchema,
             }
-            TOOL_DESCRIPTIONS[tool.name] = tool.description or tool.name
+
+            # 첫 번째 등록이면 기본 도구로 설정
+            if tool.name not in _mcp_tools:
+                _mcp_tools[tool.name] = tool_entry
+                TOOL_DESCRIPTIONS[tool.name] = tool.description or tool.name
+
+            # 다중 제공자 추적에 추가
+            _tool_providers.setdefault(tool.name, []).append({
+                "server": server_name,
+                "session": session,
+                "description": tool.description or tool.name,
+            })
+
             logging.info(f"MCP tool loaded from [{server_name}]: {tool.name}")
 
         logging.info(
@@ -122,6 +138,8 @@ async def shutdown():
         _exit_stack = None
     _mcp_sessions.clear()
     _mcp_tools.clear()
+    _tool_providers.clear()
+    _tool_server_preferences.clear()
     logging.info("Tool registry shutdown complete")
 
 
@@ -131,6 +149,7 @@ def get_tool(name: str) -> Optional[Callable]:
     로컬 도구는 직접 함수를 반환하고,
     MCP 도구는 session.call_tool()을 감싸는 async wrapper를 반환합니다.
     별칭(alias)도 지원합니다.
+    선호 서버가 설정되어 있으면 해당 서버의 세션을 사용합니다.
     """
     # 1. 로컬 도구에서 먼저 검색
     if name in TOOLS:
@@ -141,8 +160,18 @@ def get_tool(name: str) -> Optional[Callable]:
 
     # 3. MCP 도구에서 검색
     if resolved_name in _mcp_tools:
-        tool_info = _mcp_tools[resolved_name]
-        session = tool_info["session"]
+        # 선호 서버 확인
+        preferred_server = _tool_server_preferences.get(resolved_name)
+        session = None
+
+        if preferred_server and resolved_name in _tool_providers:
+            for provider in _tool_providers[resolved_name]:
+                if provider["server"] == preferred_server:
+                    session = provider["session"]
+                    break
+
+        if session is None:
+            session = _mcp_tools[resolved_name]["session"]
 
         async def mcp_tool_wrapper(**kwargs):
             result = await session.call_tool(resolved_name, arguments=kwargs)
@@ -158,6 +187,35 @@ def get_tool(name: str) -> Optional[Callable]:
         return mcp_tool_wrapper
 
     return None
+
+
+def get_tool_providers(name: str) -> List[dict]:
+    """해당 도구를 제공하는 모든 서버 정보를 반환합니다."""
+    resolved_name = config.TOOL_NAME_ALIASES.get(name, name)
+    return _tool_providers.get(resolved_name, [])
+
+
+def set_tool_preference(tool_name: str, server_name: str) -> bool:
+    """특정 도구의 선호 서버를 설정합니다."""
+    resolved_name = config.TOOL_NAME_ALIASES.get(tool_name, tool_name)
+    providers = _tool_providers.get(resolved_name, [])
+    if not any(p["server"] == server_name for p in providers):
+        return False
+    _tool_server_preferences[resolved_name] = server_name
+    return True
+
+
+def get_duplicate_tools() -> Dict[str, List[str]]:
+    """2개 이상의 서버가 제공하는 도구 목록을 반환합니다.
+
+    Returns:
+        {tool_name: [server1, server2, ...]}
+    """
+    duplicates = {}
+    for tool_name, providers in _tool_providers.items():
+        if len(providers) >= 2:
+            duplicates[tool_name] = [p["server"] for p in providers]
+    return duplicates
 
 
 def get_all_tool_descriptions() -> Dict[str, str]:

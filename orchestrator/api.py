@@ -13,6 +13,7 @@ from .gemini_client import (
 from . import tool_registry
 from . import history_manager
 import inspect
+import logging
 import os
 import re
 from datetime import datetime
@@ -186,8 +187,15 @@ async def execute_group(request: AgentRequest):
             if not tool_function:
                 raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
             
+            providers = tool_registry.get_tool_providers(task.tool_name)
+            if len(providers) >= 2:
+                server_names = [p["server"] for p in providers]
+                logging.info(
+                    f"Tool '{task.tool_name}' has multiple providers: {server_names}"
+                )
+
             history.append(f"  - 도구 실행: {task.tool_name} (인자: {task.arguments})")
-            
+
             if inspect.iscoroutinefunction(tool_function):
                 result = await tool_function(**task.arguments)
             else:
