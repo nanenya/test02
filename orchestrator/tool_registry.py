@@ -221,3 +221,11 @@ def get_duplicate_tools() -> Dict[str, List[str]]:
 def get_all_tool_descriptions() -> Dict[str, str]:
     """모든 도구(로컬 + MCP)의 이름과 설명을 반환합니다."""
     return TOOL_DESCRIPTIONS
+
+
+def get_filtered_tool_descriptions(allowed_skills=None) -> Dict[str, str]:
+    """allowed_skills 필터를 적용한 도구 이름/설명 딕셔너리 반환.
+    allowed_skills가 None 또는 빈 리스트이면 전체 반환."""
+    if not allowed_skills:
+        return TOOL_DESCRIPTIONS
+    return {k: v for k, v in TOOL_DESCRIPTIONS.items() if k in allowed_skills}

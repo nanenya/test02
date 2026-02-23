@@ -8,9 +8,9 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
-from .tool_registry import get_all_tool_descriptions
+from .tool_registry import get_all_tool_descriptions, get_filtered_tool_descriptions
 from .models import GeminiToolCall, ExecutionGroup
-from typing import List, Dict, Any, Literal
+from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
 
@@ -76,7 +76,8 @@ async def generate_execution_plan(
     requirements_content: str,
     history: list,
     model_preference: ModelPreference = "auto",
-    system_prompts: List[str] = None
+    system_prompts: List[str] = None,
+    allowed_skills: Optional[List[str]] = None,
 ) -> List[ExecutionGroup]:
     """
     ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
@@ -88,7 +89,7 @@ async def generate_execution_plan(
 
     model_name = _get_model_name(model_preference, default_type="high")
 
-    tool_descriptions = get_all_tool_descriptions()
+    tool_descriptions = get_filtered_tool_descriptions(allowed_skills)
     formatted_history = _truncate_history(history)
 
     custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
@@ -213,6 +214,88 @@ async def generate_final_answer(
             return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
         else:
             return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
+
+
+async def extract_keywords(
+    history: list,
+    model_preference: ModelPreference = "auto",
+) -> List[str]:
+    """Gemini로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함).
+    JSON_CONFIG + _truncate_history() 적용. 명사 위주, 한국어/영어 혼용."""
+    if not client:
+        return []
+
+    model_name = _get_model_name(model_preference, default_type="standard")
+    history_str = _truncate_history(history)
+
+    prompt = f"""
+다음 대화에서 핵심 키워드를 5~10개 추출해주세요.
+명사 위주로, 한국어/영어 혼용 가능합니다.
+
+--- 대화 내용 ---
+{history_str}
+---
+
+JSON 배열로만 응답하세요. 예: ["FastAPI", "SQLite", "ReAct", "Python"]
+"""
+    try:
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=JSON_CONFIG,
+        )
+        parsed = json.loads(response.text)
+        if isinstance(parsed, list):
+            return [str(k) for k in parsed if isinstance(k, str)]
+        return []
+    except Exception as e:
+        logging.warning(f"키워드 추출 실패: {e}")
+        return []
+
+
+async def detect_topic_split(
+    history: list,
+    model_preference: ModelPreference = "auto",
+) -> Optional[Dict[str, Any]]:
+    """Gemini로 주제 전환 지점 감지. 실패 시 None 반환.
+    반환: {"detected": bool, "split_index": int, "reason": str,
+           "topic_a": str, "topic_b": str}"""
+    if not client:
+        return None
+
+    model_name = _get_model_name(model_preference, default_type="standard")
+    history_str = _truncate_history(history)
+
+    prompt = f"""
+다음 대화에서 주제가 크게 전환된 지점이 있는지 분석해주세요.
+
+--- 대화 내용 (인덱스 포함) ---
+{history_str}
+---
+
+JSON 형식으로만 응답하세요:
+{{
+  "detected": true또는false,
+  "split_index": 정수(주제 전환이 시작되는 메시지 인덱스),
+  "reason": "전환 이유 설명",
+  "topic_a": "첫 번째 주제 이름",
+  "topic_b": "두 번째 주제 이름"
+}}
+주제 전환이 없으면 detected를 false로 응답하세요.
+"""
+    try:
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=JSON_CONFIG,
+        )
+        parsed = json.loads(response.text)
+        if isinstance(parsed, dict) and "detected" in parsed:
+            return parsed
+        return None
+    except Exception as e:
+        logging.warning(f"주제 분리 감지 실패: {e}")
+        return None
 
 
 async def generate_title_for_conversation(

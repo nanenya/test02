@@ -6,18 +6,19 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-02-18 (미구현 MCP 모듈 6개 Python 구현)
+> 마지막 갱신: 2026-02-23 (섹션 10 보고서 갱신 — 미구현 모듈 이슈 해결됨 반영)
 
 ### 0.1 완료된 요구사항 (Completed)
 
 | # | 요구사항 | 적용 파일 | 상태 | 비고 |
 |---|---------|-----------|------|------|
-| 26 | pytest-asyncio를 requirements.txt에 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md | DONE | 완료 요구사항/변경이력 최근 5개만 보존 |
 | 27 | MCP Server Manager 구현 | mcp_servers.json, mcp_manager.py, config.py, tool_registry.py, main.py, api.py, test_mcp_manager.py, test_tool_registry.py | DONE | JSON 레지스트리, CLI mcp 서브커맨드 6개, 테스트 33개 통과 |
 | 28 | AI 모델 동적 조회/선택 구현 | model_config.json, model_manager.py, config.py, main.py, test_model_manager.py | DONE | 4개 프로바이더, CLI model 서브커맨드 3개, 테스트 18개 통과 |
-| 29 | 미구현 MCP 모듈 6개 Python 구현 + 테스트 | file_attributes.py, file_management.py, file_content_operations.py, file_system_composite.py, git_version_control.py, web_network_atomic.py + 테스트 6개 | DONE | 전체 218개 테스트 통과, config.py LOCAL_MODULES 추가, __init__.py import 추가 |
+| 29 | 미구현 MCP 모듈 6개 Python 구현 + 테스트 | file_attributes.py 외 5개 + 테스트 6개 | DONE | 전체 218개 테스트 통과 |
+| 30 | SQLite + 지식 그래프 대화 관리 시스템 구현 | graph_manager.py(신규), test_graph_manager.py(신규), history_manager.py(재작성), gemini_client.py, models.py, api.py, main.py | DONE | 전체 327개 테스트 통과, CLI group/topic/keyword/graph/migrate 서브커맨드 추가 |
+| 31 | Agent Configuration Management 시스템 구현 | agent_config_manager.py(신규), test_agent_config_manager.py(신규), models.py, tool_registry.py, gemini_client.py, api.py, main.py | DONE | 전체 370개 테스트 통과, 5개 테이블(system_prompts/skills/skill_macros/workflows/personas), CLI prompt/skill/macro/workflow/persona 서브앱 추가, --persona 옵션, 페르소나 자동 감지 |
 
-> *#1~#25는 이전 작업으로 정리 완료 (최근 5개만 표시)*
+> *#1~#26은 이전 작업으로 정리 완료 (최근 5개만 표시)*
 
 ### 0.2 진행 중인 요구사항 (In Progress)
 
@@ -35,12 +36,13 @@
 
 | 날짜 | 작업 내용 | 변경 파일 |
 |------|-----------|-----------|
-| 2026-02-17 | pytest-asyncio requirements.txt 추가, 로그성 목록 최근 5개 유지 정책 적용 | requirements.txt, PROJECT_ANALYSIS.md |
-| 2026-02-18 | MCP Server Manager 구현: JSON 레지스트리, mcp_manager.py, config.py/tool_registry.py 리팩토링, main.py mcp 서브커맨드 6개, 테스트 33개 | mcp_servers.json, mcp_manager.py, config.py, tool_registry.py, main.py, api.py, test_mcp_manager.py, test_tool_registry.py |
 | 2026-02-18 | AI 모델 동적 조회/선택: model_config.json, model_manager.py 신규, config.py ACTIVE_PROVIDER/MODEL 추가, main.py model 서브커맨드 3개, 테스트 18개 | model_config.json, model_manager.py, config.py, main.py, test_model_manager.py |
-| 2026-02-18 | 미구현 MCP 모듈 6개 Python 구현: file_attributes(7함수), file_management(5함수), file_content_operations(5함수), file_system_composite(10함수), git_version_control(20함수), web_network_atomic(16함수) + 테스트 6개 (신규 139개), config.py/\_\_init\_\_.py 갱신 | file_attributes.py, file_management.py, file_content_operations.py, file_system_composite.py, git_version_control.py, web_network_atomic.py, test_file_attributes.py, test_file_management.py, test_file_content_operations.py, test_file_system_composite.py, test_git_version_control.py, test_web_network_atomic.py, config.py, \_\_init\_\_.py |
+| 2026-02-18 | 미구현 MCP 모듈 6개 Python 구현: file_attributes(7함수), file_management(5함수), file_content_operations(5함수), file_system_composite(10함수), git_version_control(20함수), web_network_atomic(16함수) + 테스트 6개 (신규 139개), config.py/\_\_init\_\_.py 갱신 | file_attributes.py, file_management.py, file_content_operations.py, file_system_composite.py, git_version_control.py, web_network_atomic.py + 테스트 6개, config.py, \_\_init\_\_.py |
+| 2026-02-19 | SQLite + 지식 그래프 대화 관리 시스템: graph_manager.py(SQLite 10개 테이블, CRUD, 마이그레이션, Rich 그래프 뷰), history_manager.py(얇은 어댑터 재작성), gemini_client.py(extract_keywords/detect_topic_split 추가), models.py(topic_split_info), api.py(키워드 추출/주제 감지 연동), main.py(group/topic/keyword/graph/migrate 서브커맨드 + list 필터 + run topic_split 처리), test_graph_manager.py(39개 테스트, 전체 327개 통과) | graph_manager.py(신규), test_graph_manager.py(신규), history_manager.py, gemini_client.py, models.py, api.py, main.py |
+| 2026-02-23 | Agent Configuration Management: agent_config_manager.py(5테이블 CRUD, init_db 자동, 페르소나 자동 감지), test_agent_config_manager.py(43개 테스트), models.py(persona/allowed_skills 필드), tool_registry.py(get_filtered_tool_descriptions), gemini_client.py(allowed_skills 파라미터), api.py(페르소나 해석 로직), main.py(--persona 옵션 + prompt/skill/macro/workflow/persona 5개 서브앱) | agent_config_manager.py(신규), test_agent_config_manager.py(신규), models.py, tool_registry.py, gemini_client.py, api.py, main.py |
+| 2026-02-23 | PROJECT_ANALYSIS.md 섹션 10 갱신: 미구현 모듈 이슈 해결됨(#29) 반영, 현재 알려진 이슈 없음으로 업데이트 | PROJECT_ANALYSIS.md |
 
-> *최근 5개만 표시, 이전 이력은 정리 완료*
+> *최근 5개만 표시, 이전 이력은 정리 완료 (#27 MCP Server Manager 포함)*
 
 ---
 ---
@@ -289,27 +291,44 @@ pytest
 
 ## 10. 알려진 이슈 및 개선 포인트
 
-1. **스펙만 존재하는 모듈**: file_management, file_content_operations, file_attributes, file_system_composite, git_version_control, web_network_atomic 등은 YAML 스펙만 있고 Python 구현체가 없음 (MCP 서버로 위임 예정)
+1. ~~**스펙만 존재하는 모듈**: file_management, file_content_operations, file_attributes, file_system_composite, git_version_control, web_network_atomic 등은 YAML 스펙만 있고 Python 구현체가 없음 (MCP 서버로 위임 예정)~~ → **해결됨 (#29)**: 6개 모듈 전부 Python 구현 완료 (2026-02-18)
+
+> **현재 알려진 이슈 없음.** 전체 370개 테스트 통과, Backlog 비어 있음.
 
 ---
 
 ## 11. 파일별 상세 카탈로그 (자동 생성)
 
-> 자동 생성 시각: 2026-02-18T23:11:03
-> Python 파일: 41개 | 함수: 225개 | 클래스: 90개 | 총 라인: 9028줄
+> 자동 생성 시각: 2026-02-23T16:21:21
+> Python 파일: 45개 | 함수: 331개 | 클래스: 106개 | 총 라인: 12183줄
 
 ### ./
 
-#### `PROJECT_ANALYSIS.md` (1594줄, 87,698B)
+#### `PROJECT_ANALYSIS.md` (1753줄, 98,822B)
 
-#### `main.py` (457줄, 19,507B)
+#### `main.py` (1328줄, 55,242B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
-| `list_conversations_cmd` | `` | `-` | 저장된 대화 목록을 표시합니다. |
+| `list_conversations_cmd` | `group: Annotated[Optional[int], typer.Option("-...` | `-` | 저장된 대화 목록을 표시합니다. |
 | `run` | `query: Annotated[str, typer.Option("--query", "...` | `-` | AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다. |
 | `is_port_in_use` | `port: int, host: str` | `bool` | - |
 | `run_server` | `host: Annotated[str, typer.Option(help="서버가 바인딩...` | `-` | FastAPI 오케스트레이터 서버를 실행합니다. |
+| `graph_cmd` | `center: Annotated[Optional[str], typer.Option("...` | `-` | 대화 관계 그래프를 Rich 뷰로 출력합니다. |
+| `migrate_cmd` | `dry_run: Annotated[bool, typer.Option("--dry-ru...` | `-` | 기존 JSON 히스토리를 SQLite로 마이그레이션합니다. |
+| `group_list` | `` | `-` | 그룹 목록 표시. |
+| `group_create` | `name: Annotated[str, typer.Argument(help="그룹 이름...` | `-` | 새 그룹 생성. |
+| `group_delete` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 그룹 삭제. |
+| `group_add_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에 추가. |
+| `group_remove_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에서 제거. |
+| `topic_list` | `` | `-` | 토픽 목록 표시. |
+| `topic_create` | `name: Annotated[str, typer.Argument(help="토픽 이름...` | `-` | 새 토픽 생성. |
+| `topic_delete` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 토픽 삭제. |
+| `topic_link` | `id_a: Annotated[int, typer.Argument(help="토픽 ID...` | `-` | 두 토픽을 양방향 연결. |
+| `topic_add_convo` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 대화를 토픽에 추가. |
+| `keyword_list` | `convo_id: Annotated[Optional[str], typer.Argume...` | `-` | 키워드 목록 표시. 대화 UUID를 지정하면 해당 대화의 키워드만 표시. |
+| `keyword_edit` | `convo_id: Annotated[str, typer.Argument(help="대...` | `-` | 대화의 키워드를 수동으로 편집합니다. |
+| `keyword_search` | `keyword: Annotated[str, typer.Argument(help="검색...` | `-` | 키워드로 대화를 검색합니다. |
 | `mcp_list` | `all_servers: Annotated[bool, typer.Option("--al...` | `-` | 등록된 MCP 서버 목록을 표시합니다. |
 | `mcp_add` | `name: Annotated[str, typer.Argument(help="서버 이름...` | `-` | MCP 서버를 레지스트리에 추가합니다. |
 | `mcp_remove` | `name: Annotated[str, typer.Argument(help="제거할 서...` | `-` | MCP 서버를 레지스트리에서 제거합니다. |
@@ -317,10 +336,39 @@ pytest
 | `mcp_enable` | `name: Annotated[str, typer.Argument(help="활성화할 ...` | `-` | MCP 서버를 활성화합니다. |
 | `mcp_disable` | `name: Annotated[str, typer.Argument(help="비활성화할...` | `-` | MCP 서버를 비활성화합니다. |
 | `model_status` | `` | `-` | 현재 활성 프로바이더와 모델을 표시합니다. |
-| `model_list` | `provider: Annotated[str, typer.Option("--provid...` | `-` | 프로바이더별 사용 가능한 모델 목록을 조회합니다. |
+| `model_list` | `provider: Annotated[Optional[str], typer.Option...` | `-` | 프로바이더별 사용 가능한 모델 목록을 조회합니다. |
 | `model_set` | `provider: Annotated[str, typer.Argument(help="프...` | `-` | 활성 프로바이더와 모델을 변경합니다. |
+| `prompt_list` | `` | `-` | 등록된 시스템 프롬프트 목록 표시. |
+| `prompt_show` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 내용 출력. |
+| `prompt_create` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 새 시스템 프롬프트 생성. |
+| `prompt_edit` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 수정. |
+| `prompt_delete` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 삭제. |
+| `prompt_import` | `directory: Annotated[str, typer.Option("--dir",...` | `-` | system_prompts/*.txt 파일을 DB로 임포트합니다. |
+| `skill_list` | `all_skills: Annotated[bool, typer.Option("--all...` | `-` | 등록된 스킬 목록 표시. |
+| `skill_sync` | `` | `-` | 로컬 모듈에서 스킬을 동기화합니다. |
+| `skill_enable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 활성화. |
+| `skill_disable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 비활성화. |
+| `skill_show` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 상세 정보 출력. |
+| `macro_list` | `` | `-` | 등록된 스킬 매크로 목록 표시. |
+| `macro_show` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 상세 정보 출력. |
+| `macro_create` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 새 스킬 매크로 생성. |
+| `macro_edit` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 수정. |
+| `macro_delete` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 삭제. |
+| `macro_render` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 렌더링 (변수 치환). |
+| `workflow_list` | `` | `-` | 등록된 워크플로우 목록 표시. |
+| `workflow_show` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 상세 정보 출력. |
+| `workflow_create` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 새 빈 워크플로우 생성. |
+| `workflow_add_step` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우에 스텝 추가. |
+| `workflow_delete` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 삭제. |
+| `persona_list` | `` | `-` | 등록된 페르소나 목록 표시. |
+| `persona_show` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 상세 정보 출력. |
+| `persona_create` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 새 페르소나 생성. |
+| `persona_edit` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 수정. |
+| `persona_delete` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 삭제. |
+| `persona_set_default` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나를 기본값으로 설정. |
+| `persona_detect` | `query: Annotated[str, typer.Argument(help="자동 감...` | `-` | 쿼리에 대해 자동 감지되는 페르소나를 출력합니다. |
 
-의존성: `asyncio`, `httpx`, `orchestrator`, `os`, `re`, `rich`, `socket`, `subprocess`, `time`, `typer`
+의존성: `asyncio`, `httpx`, `json`, `orchestrator`, `os`, `pathlib`, `rich`, `socket`, `subprocess`, `time`
 
 #### `mcp_servers.json` (65줄, 1,862B)
 
@@ -375,6 +423,10 @@ pytest
 | `update_report` | `project_root: str` | `str` | PROJECT_ANALYSIS.md의 자동 생성 섹션(11, 12)을 갱신. |
 
 의존성: `datetime`, `json`, `os`, `pathlib`, `project_scanner`, `re`, `sys`, `typing`
+
+### history/
+
+#### `conversations.db` (?줄, 135,168B)
 
 ### mcp_modules/
 
@@ -1244,7 +1296,44 @@ pytest
 
 의존성: `logging`
 
-#### `api.py` (235줄, 9,438B)
+#### `agent_config_manager.py` (618줄, 22,023B)
+> 에이전트 설정 관리 모듈 — 시스템 프롬프트, 스킬, 매크로, 워크플로우, 페르소나.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `init_db` | `path: Path` | `None` | 에이전트 설정 5개 테이블을 IF NOT EXISTS로 생성. |
+| `create_system_prompt` | `name: str, content: str, description: str, is_d...` | `int` | 시스템 프롬프트 생성. is_default=True면 기존 기본값 해제 후 설정. |
+| `get_system_prompt` | `name: str, db_path: Path` | `Optional[Dict]` | - |
+| `get_default_system_prompt` | `db_path: Path` | `Optional[Dict]` | - |
+| `list_system_prompts` | `db_path: Path` | `List[Dict]` | - |
+| `update_system_prompt` | `name: str, content: Optional[str], description:...` | `bool` | - |
+| `delete_system_prompt` | `name: str, db_path: Path` | `bool` | - |
+| `migrate_prompts_from_files` | `prompts_dir: str, db_path: Path` | `int` | system_prompts/*.txt → system_prompts 테이블. INSERT OR IGNORE (멱등). 마이그레이션 수 반환. |
+| `sync_skills_from_registry` | `db_path: Path` | `int` | tool_registry의 로컬 모듈을 로드하고 skills 테이블과 동기화. 신규 추가 수 반환. |
+| `list_skills` | `active_only: bool, db_path: Path` | `List[Dict]` | - |
+| `get_skill` | `name: str, db_path: Path` | `Optional[Dict]` | - |
+| `set_skill_active` | `name: str, active: bool, db_path: Path` | `bool` | - |
+| `create_macro` | `name: str, template: str, description: str, var...` | `int` | 스킬 매크로 생성. variables 미제공 시 {{var}} 패턴으로 자동 추출. |
+| `get_macro` | `name: str, db_path: Path` | `Optional[Dict]` | - |
+| `list_macros` | `db_path: Path` | `List[Dict]` | - |
+| `update_macro` | `name: str, template: Optional[str], description...` | `bool` | - |
+| `delete_macro` | `name: str, db_path: Path` | `bool` | - |
+| `render_macro` | `name: str, bindings: Dict[str, str], db_path: Path` | `str` | 매크로 템플릿에 변수 바인딩 적용. 누락된 변수는 KeyError 발생. |
+| `create_workflow` | `name: str, steps: List[Dict], description: str,...` | `int` | - |
+| `get_workflow` | `name: str, db_path: Path` | `Optional[Dict]` | - |
+| `list_workflows` | `db_path: Path` | `List[Dict]` | - |
+| `update_workflow` | `name: str, steps: Optional[List[Dict]], descrip...` | `bool` | - |
+| `delete_workflow` | `name: str, db_path: Path` | `bool` | - |
+| `create_persona` | `name: str, system_prompt: str, allowed_skills: ...` | `int` | - |
+| `get_persona` | `name: str, db_path: Path` | `Optional[Dict]` | - |
+| `list_personas` | `db_path: Path` | `List[Dict]` | - |
+| `update_persona` | `name: str, system_prompt: Optional[str], allowe...` | `bool` | - |
+| `delete_persona` | `name: str, db_path: Path` | `bool` | - |
+| `get_effective_persona` | `query: str, explicit_name: Optional[str], db_pa...` | `Optional[Dict]` | 페르소나 자동 감지 알고리즘: |
+
+의존성: `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `tool_registry`, `typing`
+
+#### `api.py` (272줄, 10,997B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1263,26 +1352,65 @@ pytest
 
 의존성: `json`, `logging`, `model_manager`, `os`, `typing`
 
-#### `gemini_client.py` (252줄, 8,662B)
+#### `gemini_client.py` (335줄, 11,339B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `List[ExecutionGroup]` | ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다. |
 | `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
+| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | Gemini로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함). |
+| `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | Gemini로 주제 전환 지점 감지. 실패 시 None 반환. |
 | `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
 
 의존성: `dotenv`, `google`, `json`, `logging`, `models`, `os`, `tool_registry`, `typing`
 
-#### `history_manager.py` (127줄, 4,602B)
+#### `graph_manager.py` (856줄, 30,638B)
+> SQLite 기반 대화 지식 그래프 관리 모듈.
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
-| `new_conversation` | `` | `Tuple[str, List[str]]` | 새 대화 ID(UUID)와 초기 히스토리 리스트를 생성합니다. |
-| `save_conversation` | `convo_id: str, history: List[str], title: str, ...` | `-` | 대화 내용, 실행 계획, 진행 상태를 JSON 파일로 저장합니다. |
-| `load_conversation` | `convo_id: str` | `Optional[Dict[str, Any]]` | 파일에서 대화 상태(히스토리, 계획, 진행도 포함)를 불러옵니다. |
-| `list_conversations` | `` | `List[Dict[str, Any]]` | 저장된 모든 대화의 메타데이터 목록을 반환합니다. |
+| `get_db` | `path: Path` | `-` | - |
+| `init_db` | `path: Path` | `None` | 모든 테이블을 IF NOT EXISTS로 생성. |
+| `migrate_json_to_sqlite` | `history_dir: Path, db_path: Path` | `int` | history/*.json → conversations 테이블. 파일은 보존. 마이그레이션된 수 반환. |
+| `create_conversation` | `convo_id: str, db_path: Path` | `None` | - |
+| `save_conversation` | `convo_id: str, history: List[str], title: str, ...` | `str` | Upsert 대화. UUID 그대로 유지. convo_id 반환. |
+| `load_conversation` | `convo_id: str, db_path: Path` | `Optional[Dict[str, Any]]` | - |
+| `list_conversations` | `group_id: Optional[int], keyword: Optional[str]...` | `List[Dict[str, Any]]` | - |
+| `delete_conversation` | `convo_id: str, db_path: Path` | `bool` | - |
+| `create_group` | `name: str, description: str, db_path: Path` | `int` | - |
+| `list_groups` | `db_path: Path` | `List[Dict]` | - |
+| `assign_conversation_to_group` | `convo_id: str, group_id: int, db_path: Path` | `None` | - |
+| `remove_conversation_from_group` | `convo_id: str, group_id: int, db_path: Path` | `None` | - |
+| `delete_group` | `group_id: int, db_path: Path` | `bool` | - |
+| `create_topic` | `name: str, description: str, db_path: Path` | `int` | - |
+| `list_topics` | `db_path: Path` | `List[Dict]` | - |
+| `assign_conversation_to_topic` | `convo_id: str, topic_id: int, db_path: Path` | `None` | - |
+| `link_topics` | `topic_id_a: int, topic_id_b: int, relation: str...` | `None` | 양방향 INSERT OR IGNORE. |
+| `delete_topic` | `topic_id: int, db_path: Path` | `bool` | - |
+| `get_or_create_keyword` | `name: str, db_path: Path` | `int` | - |
+| `assign_keywords_to_conversation` | `convo_id: str, keyword_names: List[str], db_pat...` | `None` | - |
+| `list_keywords` | `convo_id: Optional[str], db_path: Path` | `List[Dict]` | - |
+| `update_conversation_keywords` | `convo_id: str, keyword_names: List[str], db_pat...` | `None` | 기존 키워드 연결 삭제 후 재연결. |
+| `link_conversations` | `convo_id_a: str, convo_id_b: str, link_type: st...` | `None` | - |
+| `get_linked_conversations` | `convo_id: str, link_type: Optional[str], db_pat...` | `List[Dict]` | - |
+| `split_conversation` | `original_id: str, split_point_index: int, db_pa...` | `Tuple[str, str]` | history[:idx] → 원본 유지 (status='split') |
+| `get_graph_data` | `center_id: Optional[str], depth: int, db_path: ...` | `Dict` | nodes/edges 딕셔너리 반환. |
+| `render_graph` | `graph_data: Dict, center_id: Optional[str]` | `None` | Rich Panel로 그래프 출력. |
 
-의존성: `datetime`, `json`, `os`, `re`, `typing`, `uuid`
+의존성: `contextlib`, `datetime`, `json`, `logging`, `pathlib`, `rich`, `sqlite3`, `typing`, `uuid`
+
+#### `history_manager.py` (55줄, 1,726B)
+> 얇은 어댑터 레이어 — graph_manager에 모든 기능을 위임한다. 기존 함수 시그니처 100% 유지.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `new_conversation` | `` | `Tuple[str, List]` | 새 대화 ID(UUID)와 초기 히스토리를 반환합니다. |
+| `save_conversation` | `convo_id: str, history: List[str], title: str, ...` | `str` | 대화를 SQLite에 저장합니다. convo_id(UUID) 그대로 반환. |
+| `load_conversation` | `convo_id: str` | `Optional[Dict[str, Any]]` | SQLite에서 대화를 불러옵니다. |
+| `list_conversations` | `group_id: Optional[int], keyword: Optional[str]...` | `List[Dict[str, Any]]` | 저장된 대화 목록을 반환합니다. |
+| `split_conversation` | `original_id: str, split_point_index: int` | `Tuple[str, str]` | 대화를 두 개로 분리합니다. (original_id, new_id) 반환. |
+
+의존성: `typing`, `uuid`
 
 #### `mcp_manager.py` (267줄, 8,889B)
 > MCP 서버 레지스트리 관리 모듈.  서버 등록/제거/검색, 도구 중복 분석, 하드코딩 마이그레이션 등을 담당합니다.
@@ -1321,21 +1449,103 @@ pytest
 
 의존성: `google`, `httpx`, `json`, `logging`, `os`, `typing`
 
-#### `models.py` (42줄, 1,633B)
+#### `models.py` (43줄, 1,642B)
 
 **class `AgentRequest`** (line 8)
 > CLI가 서버로 보내는 요청 모델
 
-**class `GeminiToolCall`** (line 17)
+**class `GeminiToolCall`** (line 19)
 > 단일 도구 호출(MCP)을 정의하는 모델
 
-**class `ExecutionGroup`** (line 27)
+**class `ExecutionGroup`** (line 29)
 > 여러 태스크를 묶는 실행 그룹 모델
 
-**class `AgentResponse`** (line 33)
+**class `AgentResponse`** (line 35)
 > 서버가 CLI로 보내는 응답 모델
 
 의존성: `pydantic`, `typing`
+
+#### `test_agent_config_manager.py` (363줄, 16,331B)
+> agent_config_manager 단위 테스트.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `tmp_db` | `tmp_path` | `-` | 임시 DB 경로 픽스처. |
+
+**class `TestSystemPrompts`** (line 25)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_get` | `self, tmp_db` | - |
+| `test_create_default` | `self, tmp_db` | - |
+| `test_only_one_default` | `self, tmp_db` | - |
+| `test_list` | `self, tmp_db` | - |
+| `test_update` | `self, tmp_db` | - |
+| `test_update_nonexistent` | `self, tmp_db` | - |
+| `test_delete` | `self, tmp_db` | - |
+| `test_delete_nonexistent` | `self, tmp_db` | - |
+| `test_migrate_from_files` | `self, tmp_db, tmp_path` | - |
+| `test_migrate_idempotent` | `self, tmp_db, tmp_path` | - |
+
+**class `TestSkills`** (line 106)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_sync_skills` | `self, tmp_db` | - |
+| `test_sync_idempotent` | `self, tmp_db` | - |
+| `test_list_skills_active_only` | `self, tmp_db` | - |
+| `test_set_skill_active` | `self, tmp_db` | - |
+| `test_get_nonexistent_skill` | `self, tmp_db` | - |
+
+**class `TestSkillMacros`** (line 159)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_get` | `self, tmp_db` | - |
+| `test_auto_extract_variables` | `self, tmp_db` | - |
+| `test_explicit_variables` | `self, tmp_db` | - |
+| `test_list_macros` | `self, tmp_db` | - |
+| `test_update_macro` | `self, tmp_db` | - |
+| `test_delete_macro` | `self, tmp_db` | - |
+| `test_render_macro` | `self, tmp_db` | - |
+| `test_render_macro_missing_var` | `self, tmp_db` | - |
+| `test_render_nonexistent_macro` | `self, tmp_db` | - |
+
+**class `TestWorkflows`** (line 219)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_get` | `self, tmp_db` | - |
+| `test_list_workflows` | `self, tmp_db` | - |
+| `test_update_workflow` | `self, tmp_db` | - |
+| `test_delete_workflow` | `self, tmp_db` | - |
+| `test_update_nonexistent` | `self, tmp_db` | - |
+
+**class `TestPersonas`** (line 259)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_get` | `self, tmp_db` | - |
+| `test_create_default_persona` | `self, tmp_db` | - |
+| `test_only_one_default_persona` | `self, tmp_db` | - |
+| `test_list_personas` | `self, tmp_db` | - |
+| `test_update_persona` | `self, tmp_db` | - |
+| `test_delete_persona` | `self, tmp_db` | - |
+
+**class `TestGetEffectivePersona`** (line 314)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_explicit_name` | `self, tmp_db` | - |
+| `test_explicit_name_not_found_falls_back` | `self, tmp_db` | - |
+| `test_keyword_detection` | `self, tmp_db` | - |
+| `test_keyword_specificity_tiebreak` | `self, tmp_db` | - |
+| `test_no_match_returns_default` | `self, tmp_db` | - |
+| `test_no_match_no_default_returns_none` | `self, tmp_db` | - |
+| `test_empty_query_returns_default` | `self, tmp_db` | - |
+| `test_no_personas_returns_none` | `self, tmp_db` | - |
+
+의존성: `datetime`, `graph_manager`, `json`, `pathlib`, `pytest`, `tempfile`
 
 #### `test_api.py` (162줄, 6,651B)
 > orchestrator/api.py에 대한 단위 테스트
@@ -1404,6 +1614,103 @@ pytest
 | `test_short_history_returns_new_conversation` | `self` | history가 2개 미만이면 '새로운_대화' 반환 |
 
 의존성: `json`, `models`, `pytest`, `unittest`
+
+#### `test_graph_manager.py` (390줄, 15,369B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `db` | `tmp_path` | `-` | 각 테스트마다 격리된 임시 DB. |
+
+**class `TestInitDb`** (line 47)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_all_tables_exist` | `self, db` | - |
+
+**class `TestConversationCRUD`** (line 75)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_load` | `self, db` | - |
+| `test_save_new_conversation` | `self, db` | - |
+| `test_save_updates_existing` | `self, db` | - |
+| `test_is_final_sets_status` | `self, db` | - |
+| `test_load_nonexistent_returns_none` | `self, db` | - |
+| `test_list_conversations` | `self, db` | - |
+| `test_list_filter_by_status` | `self, db` | - |
+| `test_list_filter_by_group` | `self, db` | - |
+| `test_list_filter_by_keyword` | `self, db` | - |
+| `test_delete_conversation` | `self, db` | - |
+| `test_delete_nonexistent_returns_false` | `self, db` | - |
+
+**class `TestGroupCRUD`** (line 148)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_list` | `self, db` | - |
+| `test_assign_and_list_with_count` | `self, db` | - |
+| `test_remove_conversation_from_group` | `self, db` | - |
+| `test_duplicate_group_name_raises` | `self, db` | - |
+| `test_delete_group` | `self, db` | - |
+
+**class `TestKeywordCRUD`** (line 186)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_get_or_create_idempotent` | `self, db` | - |
+| `test_assign_and_list` | `self, db` | - |
+| `test_update_replaces_keywords` | `self, db` | - |
+| `test_list_all_keywords_usage_count` | `self, db` | - |
+
+**class `TestTopicCRUD`** (line 219)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_create_and_list` | `self, db` | - |
+| `test_assign_convo_to_topic` | `self, db` | - |
+| `test_link_topics_bidirectional` | `self, db` | - |
+| `test_delete_topic` | `self, db` | - |
+
+**class `TestSplitConversation`** (line 254)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_split_creates_new_uuid` | `self, db` | - |
+| `test_split_histories` | `self, db` | - |
+| `test_split_registers_link` | `self, db` | - |
+| `test_split_original_status` | `self, db` | - |
+| `test_split_copies_keywords` | `self, db` | - |
+| `test_split_copies_group` | `self, db` | - |
+| `test_split_nonexistent_raises` | `self, db` | - |
+
+**class `TestConversationLinks`** (line 304)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_link_and_get` | `self, db` | - |
+| `test_get_linked_with_type_filter` | `self, db` | - |
+
+**class `TestMigrateJson`** (line 322)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_migrates_json_to_db` | `self, db, tmp_path` | - |
+| `test_migrates_duplicate_skipped` | `self, db, tmp_path` | - |
+| `test_skips_invalid_json` | `self, db, tmp_path` | - |
+
+**class `TestExtractKeywords`** (line 369)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_client_none_returns_empty` | `self, monkeypatch` | - |
+
+**class `TestDetectTopicSplit`** (line 381)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_client_none_returns_none` | `self, monkeypatch` | - |
+
+의존성: `json`, `orchestrator`, `pytest`, `sqlite3`, `uuid`
 
 #### `test_mcp_manager.py` (193줄, 7,356B)
 > orchestrator/mcp_manager.py에 대한 단위 테스트
@@ -1552,7 +1859,7 @@ pytest
 
 의존성: `importlib`, `pytest`, `unittest`
 
-#### `tool_registry.py` (223줄, 7,726B)
+#### `tool_registry.py` (231줄, 8,098B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1563,6 +1870,7 @@ pytest
 | `set_tool_preference` | `tool_name: str, server_name: str` | `bool` | 특정 도구의 선호 서버를 설정합니다. |
 | `get_duplicate_tools` | `` | `Dict[str, List[str]]` | 2개 이상의 서버가 제공하는 도구 목록을 반환합니다. |
 | `get_all_tool_descriptions` | `` | `Dict[str, str]` | 모든 도구(로컬 + MCP)의 이름과 설명을 반환합니다. |
+| `get_filtered_tool_descriptions` | `allowed_skills` | `Dict[str, str]` | allowed_skills 필터를 적용한 도구 이름/설명 딕셔너리 반환. |
 
 의존성: `contextlib`, `importlib`, `inspect`, `logging`, `mcp`, `os`, `typing`
 
@@ -1575,7 +1883,7 @@ pytest
 ## 12. 모듈 간 의존성 맵 (자동 생성)
 
 ```
-  main.py → orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.mcp_manager, orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model, orchestrator.tool_registry.TOOL_DESCRIPTIONS
+  main.py → orchestrator.agent_config_manager, orchestrator.graph_manager, orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.history_manager.split_conversation, orchestrator.mcp_manager, orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model, orchestrator.tool_registry.TOOL_DESCRIPTIONS
   test_code_execution_atomic.py → .code_execution_atomic
   test_file_attributes.py → .file_attributes
   test_file_content_operations.py → .file_content_operations
@@ -1584,9 +1892,12 @@ pytest
   test_git_version_control.py → .git_version_control
   test_user_interaction_composite.py → .user_interaction_composite
   test_web_network_atomic.py → .web_network_atomic
-  api.py → .history_manager, .tool_registry
+  api.py → .agent_config_manager, .graph_manager, .history_manager, .tool_registry
+  history_manager.py → .graph_manager
   mcp_manager.py → .config
+  test_agent_config_manager.py → .agent_config_manager
   test_gemini_client.py → .gemini_client
+  test_graph_manager.py → orchestrator.gemini_client, orchestrator.gemini_client.detect_topic_split, orchestrator.gemini_client.extract_keywords, orchestrator.graph_manager.assign_conversation_to_group, orchestrator.graph_manager.assign_conversation_to_topic, orchestrator.graph_manager.assign_keywords_to_conversation, orchestrator.graph_manager.create_conversation, orchestrator.graph_manager.create_group, orchestrator.graph_manager.create_topic, orchestrator.graph_manager.delete_conversation, orchestrator.graph_manager.delete_group, orchestrator.graph_manager.delete_topic, orchestrator.graph_manager.get_linked_conversations, orchestrator.graph_manager.get_or_create_keyword, orchestrator.graph_manager.init_db, orchestrator.graph_manager.link_conversations, orchestrator.graph_manager.link_topics, orchestrator.graph_manager.list_conversations, orchestrator.graph_manager.list_groups, orchestrator.graph_manager.list_keywords, orchestrator.graph_manager.list_topics, orchestrator.graph_manager.load_conversation, orchestrator.graph_manager.migrate_json_to_sqlite, orchestrator.graph_manager.remove_conversation_from_group, orchestrator.graph_manager.save_conversation, orchestrator.graph_manager.split_conversation, orchestrator.graph_manager.update_conversation_keywords
   test_mcp_manager.py → .mcp_manager
   test_model_manager.py → .model_manager
   test_tool_registry.py → .config, .tool_registry

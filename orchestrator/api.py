@@ -8,10 +8,14 @@ from .models import AgentRequest, AgentResponse, GeminiToolCall, ExecutionGroup
 from .gemini_client import (
     generate_execution_plan,
     generate_final_answer,
-    generate_title_for_conversation
+    generate_title_for_conversation,
+    extract_keywords,
+    detect_topic_split,
 )
 from . import tool_registry
 from . import history_manager
+from . import graph_manager
+from . import agent_config_manager
 import inspect
 import logging
 import os
@@ -40,6 +44,20 @@ async def decide_and_act(request: AgentRequest):
     history = data.get("history", []) if data else request.history
     convo_id = data.get("id", request.conversation_id) if data else request.conversation_id
 
+    # 페르소나 해석
+    effective_system_prompts = request.system_prompts or []
+    effective_allowed_skills = request.allowed_skills  # None = 필터 없음
+
+    if not effective_system_prompts:
+        persona = agent_config_manager.get_effective_persona(
+            query=request.user_input or "",
+            explicit_name=request.persona,
+        )
+        if persona:
+            effective_system_prompts = [persona["system_prompt"]]
+            if effective_allowed_skills is None and persona.get("allowed_skills"):
+                effective_allowed_skills = persona["allowed_skills"]
+
     if request.user_input or not history:
         query = request.user_input or "무엇을 할까요?" 
         
@@ -60,11 +78,12 @@ async def decide_and_act(request: AgentRequest):
                     
         try:
             plan_list = await generate_execution_plan(
-                user_query=query, 
-                requirements_content=requirements_content, 
+                user_query=query,
+                requirements_content=requirements_content,
                 history=history,
                 model_preference=request.model_preference,
-                system_prompts=request.system_prompts or []
+                system_prompts=effective_system_prompts,
+                allowed_skills=effective_allowed_skills,
             )
             
             if not plan_list:
@@ -107,28 +126,46 @@ async def decide_and_act(request: AgentRequest):
             first_query = next((h.split(":", 1)[1].strip() for h in history if h.startswith("사용자 요청:")), "이전 작업을 계속하세요.")
             
             plan_list = await generate_execution_plan(
-                user_query=first_query, 
-                requirements_content="", 
+                user_query=first_query,
+                requirements_content="",
                 history=history,
                 model_preference=request.model_preference,
-                system_prompts=request.system_prompts or []
+                system_prompts=effective_system_prompts,
+                allowed_skills=effective_allowed_skills,
             )
             
             if not plan_list:
                 final_answer = await generate_final_answer(history, request.model_preference)
                 history.append(f"최종 답변: {final_answer}")
-                
+
                 title_summary = await generate_title_for_conversation(history, request.model_preference)
-                
+
                 history_manager.save_conversation(
-                    convo_id, history, title_summary, [], 0, 
+                    convo_id, history, title_summary, [], 0,
                     is_final=True
                 )
+
+                # 키워드 추출 (실패 무시)
+                try:
+                    keywords = await extract_keywords(history, request.model_preference)
+                    if keywords:
+                        graph_manager.assign_keywords_to_conversation(convo_id, keywords)
+                except Exception as e:
+                    logging.warning(f"키워드 추출 실패: {e}")
+
+                # 주제 분리 감지 (실패 무시)
+                topic_split_info = None
+                try:
+                    topic_split_info = await detect_topic_split(history, request.model_preference)
+                except Exception as e:
+                    logging.warning(f"주제 분리 감지 실패: {e}")
+
                 return AgentResponse(
                     conversation_id=convo_id,
                     status="FINAL_ANSWER",
                     history=history,
-                    message=final_answer
+                    message=final_answer,
+                    topic_split_info=topic_split_info,
                 )
             
             plan_dicts = [group.model_dump() for group in plan_list]

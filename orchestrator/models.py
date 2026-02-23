@@ -3,16 +3,18 @@
 # orchestrator/models.py
 
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 
 class AgentRequest(BaseModel):
     """CLI가 서버로 보내는 요청 모델"""
     conversation_id: str
     history: List[str]
-    user_input: str | None = None 
+    user_input: str | None = None
     requirement_paths: List[str] | None = None
-    model_preference: str = "auto" 
-    system_prompts: List[str] | None = None 
+    model_preference: str = "auto"
+    system_prompts: List[str] | None = None
+    persona: str | None = None
+    allowed_skills: List[str] | None = None
 
 class GeminiToolCall(BaseModel):
     """단일 도구 호출(MCP)을 정의하는 모델"""
@@ -34,9 +36,8 @@ class AgentResponse(BaseModel):
     """서버가 CLI로 보내는 응답 모델"""
     conversation_id: str
     # (수정) STEP_EXECUTED 상태 추가
-    status: Literal["PLAN_CONFIRMATION", "FINAL_ANSWER", "ERROR", "STEP_EXECUTED"] 
+    status: Literal["PLAN_CONFIRMATION", "FINAL_ANSWER", "ERROR", "STEP_EXECUTED"]
     history: List[str]
-    message: str 
+    message: str
     execution_group: ExecutionGroup | None = None # 다음 1개 그룹 확인용
-    # (수정) ReAct 모델에서는 '전체 계획'을 미리 반환할 수 없으므로 plan 필드 제거
-    # plan: List[ExecutionGroup] | None = None
+    topic_split_info: Optional[Dict[str, Any]] = None  # 주제 분리 감지 결과
