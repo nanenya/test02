@@ -6,7 +6,7 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-02-23 (섹션 10 보고서 갱신 — 미구현 모듈 이슈 해결됨 반영)
+> 마지막 갱신: 2026-02-23 (MCP 함수 테스트 코드 작성/실행 워크플로우 추가)
 
 ### 0.1 완료된 요구사항 (Completed)
 
@@ -17,6 +17,7 @@
 | 29 | 미구현 MCP 모듈 6개 Python 구현 + 테스트 | file_attributes.py 외 5개 + 테스트 6개 | DONE | 전체 218개 테스트 통과 |
 | 30 | SQLite + 지식 그래프 대화 관리 시스템 구현 | graph_manager.py(신규), test_graph_manager.py(신규), history_manager.py(재작성), gemini_client.py, models.py, api.py, main.py | DONE | 전체 327개 테스트 통과, CLI group/topic/keyword/graph/migrate 서브커맨드 추가 |
 | 31 | Agent Configuration Management 시스템 구현 | agent_config_manager.py(신규), test_agent_config_manager.py(신규), models.py, tool_registry.py, gemini_client.py, api.py, main.py | DONE | 전체 370개 테스트 통과, 5개 테이블(system_prompts/skills/skill_macros/workflows/personas), CLI prompt/skill/macro/workflow/persona 서브앱 추가, --persona 옵션, 페르소나 자동 감지 |
+| 32 | MCP Function DB 관리 시스템 구현 | mcp_db_manager.py(신규), test_mcp_db_manager.py(신규), tool_registry.py, api.py, main.py, .gitignore | DONE | 전체 406개 테스트 통과, 4개 테이블(mcp_functions/mcp_module_contexts/mcp_usage_log/mcp_session_log), 함수 단위 버전 이력, 자동 테스트 실행, mcp_cache/ 캐시, CLI mcp function 서브앱 6개 + mcp stats 추가 |
 
 > *#1~#26은 이전 작업으로 정리 완료 (최근 5개만 표시)*
 
@@ -41,6 +42,9 @@
 | 2026-02-19 | SQLite + 지식 그래프 대화 관리 시스템: graph_manager.py(SQLite 10개 테이블, CRUD, 마이그레이션, Rich 그래프 뷰), history_manager.py(얇은 어댑터 재작성), gemini_client.py(extract_keywords/detect_topic_split 추가), models.py(topic_split_info), api.py(키워드 추출/주제 감지 연동), main.py(group/topic/keyword/graph/migrate 서브커맨드 + list 필터 + run topic_split 처리), test_graph_manager.py(39개 테스트, 전체 327개 통과) | graph_manager.py(신규), test_graph_manager.py(신규), history_manager.py, gemini_client.py, models.py, api.py, main.py |
 | 2026-02-23 | Agent Configuration Management: agent_config_manager.py(5테이블 CRUD, init_db 자동, 페르소나 자동 감지), test_agent_config_manager.py(43개 테스트), models.py(persona/allowed_skills 필드), tool_registry.py(get_filtered_tool_descriptions), gemini_client.py(allowed_skills 파라미터), api.py(페르소나 해석 로직), main.py(--persona 옵션 + prompt/skill/macro/workflow/persona 5개 서브앱) | agent_config_manager.py(신규), test_agent_config_manager.py(신규), models.py, tool_registry.py, gemini_client.py, api.py, main.py |
 | 2026-02-23 | PROJECT_ANALYSIS.md 섹션 10 갱신: 미구현 모듈 이슈 해결됨(#29) 반영, 현재 알려진 이슈 없음으로 업데이트 | PROJECT_ANALYSIS.md |
+| 2026-02-23 | MCP Function DB 관리 시스템: mcp_db_manager.py(4테이블 CRUD, 버전 관리, pytest 자동 실행, 캐시 파일 생성, 마이그레이션), test_mcp_db_manager.py(36개 테스트), tool_registry.py(DB 우선+파일 fallback), api.py(execute_group 세션/사용 로깅), main.py(mcp function 서브앱 6개+stats), .gitignore(mcp_cache/ 추가), 전체 406개 테스트 통과 | mcp_db_manager.py(신규), test_mcp_db_manager.py(신규), tool_registry.py, api.py, main.py, .gitignore |
+| 2026-02-23 | mcp_modules/ 일괄 DB 임포트 + 파일 정리: 10개 모듈 108개 함수 DB 임포트(테스트 없이 즉시 활성화), 소스 10개+테스트 10개+__init__.py+YAML 10개 삭제, mcp_modules/ 디렉토리만 존재, 전체 테스트 188개 통과(406→218개 감소: mcp_modules 테스트 파일 삭제됨) | mcp_modules/(전 파일 삭제) |
+| 2026-02-23 | MCP 함수 테스트 코드 작성/실행 워크플로우: update_function_test_code()+activate_function() 추가, CLI update/edit-test/activate/template 4개 커맨드 추가, 테스트 8개 추가, 전체 196개 통과 | mcp_db_manager.py, test_mcp_db_manager.py, main.py |
 
 > *최근 5개만 표시, 이전 이력은 정리 완료 (#27 MCP Server Manager 포함)*
 

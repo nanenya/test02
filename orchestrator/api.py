@@ -16,10 +16,12 @@ from . import tool_registry
 from . import history_manager
 from . import graph_manager
 from . import agent_config_manager
+from . import mcp_db_manager
 import inspect
 import logging
 import os
 import re
+import time
 from datetime import datetime
 
 
@@ -218,12 +220,22 @@ async def execute_group(request: AgentRequest):
     
     history.append(f"그룹 실행 시작: [{group_to_execute.group_id}] {group_to_execute.description}")
 
+    session_id = None
+    overall_success = True
+    try:
+        session_id = mcp_db_manager.start_session(
+            conversation_id=convo_id,
+            group_id=group_to_execute.group_id,
+        )
+    except Exception as e:
+        logging.warning(f"mcp_db_manager.start_session 실패: {e}")
+
     try:
         for task in group_to_execute.tasks:
             tool_function = tool_registry.get_tool(task.tool_name)
             if not tool_function:
                 raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
-            
+
             providers = tool_registry.get_tool_providers(task.tool_name)
             if len(providers) >= 2:
                 server_names = [p["server"] for p in providers]
@@ -233,36 +245,77 @@ async def execute_group(request: AgentRequest):
 
             history.append(f"  - 도구 실행: {task.tool_name} (인자: {task.arguments})")
 
-            if inspect.iscoroutinefunction(tool_function):
-                result = await tool_function(**task.arguments)
-            else:
-                result = tool_function(**task.arguments)
-            
+            t_start = time.monotonic()
+            try:
+                if inspect.iscoroutinefunction(tool_function):
+                    result = await tool_function(**task.arguments)
+                else:
+                    result = tool_function(**task.arguments)
+
+                duration_ms = int((time.monotonic() - t_start) * 1000)
+                args_summary = ",".join(task.arguments.keys())
+                try:
+                    mcp_db_manager.log_usage(
+                        task.tool_name,
+                        success=True,
+                        session_id=session_id,
+                        duration_ms=duration_ms,
+                        args_summary=args_summary,
+                    )
+                except Exception as log_err:
+                    logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
+            except Exception as tool_err:
+                duration_ms = int((time.monotonic() - t_start) * 1000)
+                try:
+                    mcp_db_manager.log_usage(
+                        task.tool_name,
+                        success=False,
+                        session_id=session_id,
+                        duration_ms=duration_ms,
+                        error_message=str(tool_err),
+                        args_summary=",".join(task.arguments.keys()),
+                    )
+                except Exception as log_err:
+                    logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
+                raise tool_err
+
             result_str = str(result)
             if len(result_str) > 1000:
                 result_str = result_str[:1000] + "... (결과가 너무 길어 잘림)"
-            
+
             history.append(f"  - 실행 결과: {result_str}")
-        
+
         history.append(f"그룹 실행 완료: [{group_to_execute.group_id}]")
-        
+
         history_manager.save_conversation(
-            convo_id, history, data.get("title", "실행 중"), [], 0, 
+            convo_id, history, data.get("title", "실행 중"), [], 0,
             is_final=False
         )
 
     except Exception as e:
+        overall_success = False
         history.append(f"그룹 실행 중 오류 발생: {e}")
         history_manager.save_conversation(
-            convo_id, history, "실행 오류", plan_dicts, 0, 
+            convo_id, history, "실행 오류", plan_dicts, 0,
             is_final=False
         )
+        try:
+            if session_id:
+                mcp_db_manager.end_session(session_id, overall_success=False)
+        except Exception as end_err:
+            logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
         return AgentResponse(
             conversation_id=convo_id,
             status="ERROR",
             history=history,
             message=f"그룹 '{group_to_execute.group_id}' 실행 중 오류: {e}",
         )
+
+    try:
+        if session_id:
+            mcp_db_manager.end_session(session_id, overall_success=True)
+    except Exception as end_err:
+        logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
 
     return AgentResponse(
         conversation_id=convo_id,

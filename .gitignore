@@ -4,6 +4,7 @@ venv/
 backup/
 history/
 temp/
+mcp_cache/
 .pytest_cache/
 __pycache__/
 orchestrator/__pycache__/

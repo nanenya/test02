@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 # orchestrator/tool_registry.py
 
-import os
 import importlib
+import importlib.util
 import inspect
+import os
 import logging
 from typing import Dict, Any, Callable, List, Optional
 from contextlib import AsyncExitStack
@@ -29,8 +30,34 @@ _tool_server_preferences: Dict[str, str] = {}  # tool_name -> preferred server_n
 
 
 def _load_local_modules():
-    """LOCAL_MODULES에 정의된 커스텀 모듈만 로드합니다."""
+    """LOCAL_MODULES에 정의된 커스텀 모듈을 로드합니다.
+
+    DB에 활성 함수가 있으면 DB 우선 로드, 없으면 파일 기반 fallback.
+    """
     for module_name in config.LOCAL_MODULES:
+        # ── DB 우선 경로 ──────────────────────────────────────────
+        try:
+            from . import mcp_db_manager  # 지연 임포트 (순환 방지)
+            db_funcs = mcp_db_manager.list_functions(module_group=module_name)
+            if db_funcs:
+                cache_file = mcp_db_manager.generate_temp_module(module_name)
+                spec = importlib.util.spec_from_file_location(
+                    f"mcp_cache.{module_name}", cache_file
+                )
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    for name, func in inspect.getmembers(module, inspect.isfunction):
+                        if not name.startswith("_"):
+                            TOOLS[name] = func
+                            description = func.__doc__.strip() if func.__doc__ else name
+                            TOOL_DESCRIPTIONS[name] = description
+                            logging.info(f"Local tool loaded (DB): {name}")
+                    continue
+        except Exception as e:
+            logging.warning(f"DB load failed for {module_name}, falling back to file: {e}")
+
+        # ── 파일 기반 fallback ────────────────────────────────────
         full_module_name = f"{config.MCP_DIRECTORY}.{module_name}"
         try:
             module = importlib.import_module(full_module_name)
@@ -39,7 +66,7 @@ def _load_local_modules():
                     TOOLS[name] = func
                     description = func.__doc__.strip() if func.__doc__ else name
                     TOOL_DESCRIPTIONS[name] = description
-                    logging.info(f"Local tool loaded: {name}")
+                    logging.info(f"Local tool loaded (file): {name}")
         except Exception as e:
             logging.error(f"Failed to load module {full_module_name}: {e}")
 
