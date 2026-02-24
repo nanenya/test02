@@ -10,6 +10,9 @@ import subprocess
 import time
 import socket
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
@@ -59,6 +62,92 @@ if not os.path.exists(default_prompt_path):
         f.write("당신은 유능한 AI 어시스턴트입니다.")
 
 
+# ── ollama auto-start ─────────────────────────────────────────────
+
+_OLLAMA_BIN_CANDIDATES = [
+    "/home/nanenya/.local/bin/ollama",
+    os.path.expanduser("~/.local/bin/ollama"),
+]
+
+def _find_ollama_bin() -> Optional[str]:
+    """ollama 실행 파일 경로를 반환합니다. 없으면 None."""
+    for path in _OLLAMA_BIN_CANDIDATES:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    # PATH에서도 탐색
+    import shutil
+    return shutil.which("ollama")
+
+
+def _is_ollama_running(base_url: str = "http://localhost:11434") -> bool:
+    """Ollama 서버가 응답하는지 확인합니다."""
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(base_url)
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _ensure_ollama_running() -> bool:
+    """활성 프로바이더가 ollama일 때 서버가 실행 중인지 보장합니다.
+
+    이미 실행 중이면 즉시 True를 반환합니다.
+    실행 중이 아니면:
+      1. systemctl --user start ollama 시도
+      2. 실패 시 ollama 바이너리 직접 실행
+    반환값: 서버 준비 완료 여부
+    """
+    from orchestrator.model_manager import load_config, get_active_model
+    provider, _ = get_active_model(load_config())
+    if provider != "ollama":
+        return True  # ollama가 아니면 무관
+
+    if _is_ollama_running():
+        return True
+
+    console.print("[yellow]Ollama 서버가 실행 중이 아닙니다. 자동 시작을 시도합니다...[/yellow]")
+
+    # 1차: systemctl --user start ollama
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "start", "ollama"],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode == 0:
+            for _ in range(10):
+                time.sleep(1)
+                if _is_ollama_running():
+                    console.print("[green]Ollama 서버가 systemd 서비스로 시작되었습니다.[/green]")
+                    return True
+    except Exception:
+        pass
+
+    # 2차: 바이너리 직접 실행
+    ollama_bin = _find_ollama_bin()
+    if not ollama_bin:
+        console.print("[bold red]오류: ollama 바이너리를 찾을 수 없습니다.[/bold red]")
+        console.print("  설치 경로 확인: ~/.local/bin/ollama")
+        return False
+
+    env = os.environ.copy()
+    env.setdefault("OLLAMA_HOME", os.path.expanduser("~/.ollama"))
+    subprocess.Popen(
+        [ollama_bin, "serve"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    for _ in range(15):
+        time.sleep(1)
+        if _is_ollama_running():
+            console.print("[green]Ollama 서버가 시작되었습니다.[/green]")
+            return True
+
+    console.print("[bold red]Ollama 서버 시작 실패. 수동으로 실행하세요: ollama serve[/bold red]")
+    return False
+
+
 # ── list ──────────────────────────────────────────────────────────
 
 @app.command(name="list")
@@ -105,6 +194,8 @@ def run(
     if not query and not continue_id:
         console.print("[bold red]오류: --query 또는 --continue 옵션 중 하나는 반드시 필요합니다.[/bold red]")
         raise typer.Exit()
+
+    _ensure_ollama_running()
 
     client = httpx.Client(timeout=120)
 
@@ -250,9 +341,10 @@ def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
 def run_server(
     host: Annotated[str, typer.Option(help="서버가 바인딩할 호스트 주소")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="서버가 리스닝할 포트 번호")] = 8000,
-    reload: Annotated[bool, typer.Option(help="코드 변경 시 서버 자동 재시작 여부")] = True,
+    reload: Annotated[bool, typer.Option(help="코드 변경 시 서버 자동 재시작 여부")] = False,
 ):
     """FastAPI 오케스트레이터 서버를 실행합니다."""
+    _ensure_ollama_running()
     typer.echo(f"{port}번 포트를 사용하는 기존 프로세스를 확인하고 종료합니다...")
     try:
         subprocess.run(
@@ -1157,13 +1249,59 @@ def model_list(
 @model_app.command(name="set")
 def model_set(
     provider: Annotated[str, typer.Argument(help="프로바이더 이름 (gemini, claude, openai, grok)")],
-    model: Annotated[str, typer.Argument(help="모델 ID")],
+    model: Annotated[Optional[str], typer.Argument(help="모델 ID (생략 시 목록에서 선택)")] = None,
 ):
-    """활성 프로바이더와 모델을 변경합니다."""
-    from orchestrator.model_manager import load_config, set_active_model
+    """활성 프로바이더와 모델을 변경합니다.
+
+    모델 ID를 생략하면 API에서 목록을 조회하여 선택할 수 있습니다.
+    """
+    from orchestrator.model_manager import load_config, set_active_model, list_providers, fetch_models
+
+    config = load_config()
+
+    # 모델 ID가 없으면 API에서 목록 조회 후 선택
+    if not model:
+        providers = list_providers(config)
+        pinfo = next((p for p in providers if p["name"] == provider), None)
+        if pinfo is None:
+            console.print(f"[bold red]오류: 알 수 없는 프로바이더 '{provider}'[/bold red]")
+            raise typer.Exit(code=1)
+
+        if not pinfo["has_api_key"]:
+            console.print(f"[bold red]오류: API 키 미설정 (환경변수: {pinfo['api_key_env']})[/bold red]")
+            raise typer.Exit(code=1)
+
+        console.print(f"[cyan]{provider} 모델 목록을 조회합니다...[/cyan]")
+        try:
+            models = asyncio.run(fetch_models(provider, config))
+        except Exception as e:
+            console.print(f"[bold red]모델 목록 조회 실패: {e}[/bold red]")
+            raise typer.Exit(code=1)
+
+        if not models:
+            console.print("[yellow]사용 가능한 모델이 없습니다.[/yellow]")
+            raise typer.Exit(code=1)
+
+        table = Table("#", "ID", "Name", "Description")
+        for i, m in enumerate(models, 1):
+            desc = m.get("description") or ""
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
+            table.add_row(str(i), m["id"], m["name"], desc)
+        console.print(table)
+
+        choice = typer.prompt(f"번호를 입력하세요 (1-{len(models)})")
+        try:
+            idx = int(choice) - 1
+            if not (0 <= idx < len(models)):
+                raise ValueError
+        except ValueError:
+            console.print("[bold red]오류: 유효하지 않은 번호입니다.[/bold red]")
+            raise typer.Exit(code=1)
+
+        model = models[idx]["id"]
 
     try:
-        config = load_config()
         set_active_model(provider, model, config)
         console.print(f"[green]활성 모델이 변경되었습니다: {provider} / {model}[/green]")
     except ValueError as e:

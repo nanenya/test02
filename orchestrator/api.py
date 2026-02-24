@@ -5,7 +5,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from .models import AgentRequest, AgentResponse, GeminiToolCall, ExecutionGroup
-from .gemini_client import (
+from .llm_client import (
     generate_execution_plan,
     generate_final_answer,
     generate_title_for_conversation,
