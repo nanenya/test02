@@ -1,17 +1,36 @@
+# ── Web Framework ──────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.20
 
-fastapi
-uvicorn[standard]
-typer[all]
-pydantic
-google-genai
-python-dotenv
-httpx  # 비동기 HTTP 요청을 위한 라이브러리
-feedparser
-bs4
+# ── CLI / TUI ───────────────────────────────────────────────────────
+typer[all]>=0.12.0
+rich>=13.9.0
+questionary>=2.0.0
+
+# ── Data / Validation ───────────────────────────────────────────────
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# ── LLM Providers ───────────────────────────────────────────────────
+google-genai>=1.0.0
+anthropic>=0.40.0
+openai>=1.0.0
+
+# ── MCP ─────────────────────────────────────────────────────────────
+mcp>=1.0.0
+mcp-server-git
+mcp-server-fetch
+
+# ── HTTP / Web Scraping ─────────────────────────────────────────────
+httpx>=0.27.0
 requests_mock
+feedparser
+beautifulsoup4>=4.12.0
+
+# ── Database ────────────────────────────────────────────────────────
+aiosqlite>=0.20.0
+
+# ── Testing ─────────────────────────────────────────────────────────
 pytest-mock
-mcp>=1.0.0            # MCP Python SDK (클라이언트)
-mcp-server-git        # Git MCP 서버
-mcp-server-fetch      # Fetch MCP 서버
-questionary           # 대화형 사용자 입력 UI
-pytest-asyncio        # async 테스트 지원
+pytest-asyncio>=0.24.0

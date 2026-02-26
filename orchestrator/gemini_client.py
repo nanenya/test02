@@ -9,7 +9,8 @@ import json
 import logging
 from dotenv import load_dotenv
 from .tool_registry import get_all_tool_descriptions, get_filtered_tool_descriptions
-from .models import GeminiToolCall, ExecutionGroup
+from .models import ToolCall, ExecutionGroup
+from .constants import HISTORY_MAX_CHARS
 from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
@@ -27,7 +28,7 @@ STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite"
 ModelPreference = Literal["auto", "standard", "high"]
 
 
-DEFAULT_HISTORY_MAX_CHARS = 6000
+DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
 
 
 def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:

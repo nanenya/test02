@@ -4,7 +4,8 @@
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
-from .models import AgentRequest, AgentResponse, GeminiToolCall, ExecutionGroup
+from fastapi.staticfiles import StaticFiles
+from .models import AgentRequest, AgentResponse, ExecutionGroup
 from .llm_client import (
     generate_execution_plan,
     generate_final_answer,
@@ -23,15 +24,105 @@ import os
 import re
 import time
 from datetime import datetime
+from fastapi.responses import JSONResponse
+from . import issue_tracker
+
+
+from .constants import MAX_HISTORY_ENTRIES, MAX_TOOL_RESULT_LENGTH, MAX_REQUIREMENT_FILE_SIZE
+
+
+def _validate_requirement_path(path: str) -> str:
+    """요구사항 파일 경로를 검증합니다.
+
+    심볼릭 링크를 해소하고, 일반 파일 여부와 1MB 크기 제한을 확인합니다.
+    Returns:
+        실제 경로(realpath) 문자열
+    Raises:
+        ValueError: 파일이 존재하지 않거나 일반 파일이 아니거나 너무 큰 경우
+    """
+    real = os.path.realpath(path)
+    if not os.path.isfile(real):
+        raise ValueError(f"요구사항 경로가 일반 파일이 아닙니다: {path}")
+    if os.path.getsize(real) > MAX_REQUIREMENT_FILE_SIZE:
+        raise ValueError(f"요구사항 파일이 너무 큽니다 (최대 1MB): {path}")
+    return real
+
+
+def _prune_history(history: list) -> list:
+    """대화 이력이 MAX_HISTORY_ENTRIES를 초과하면 오래된 항목을 제거합니다."""
+    if len(history) > MAX_HISTORY_ENTRIES:
+        logging.info(
+            f"대화 이력이 {MAX_HISTORY_ENTRIES}개를 초과하여 오래된 항목을 제거합니다. "
+            f"(현재: {len(history)}개)"
+        )
+        return history[-MAX_HISTORY_ENTRIES:]
+    return history
+
+
+def _extract_first_query(history: list) -> str:
+    """대화 이력에서 첫 번째 사용자 요청을 추출합니다.
+
+    '사용자 요청: ' 접두어로 시작하는 첫 번째 항목에서 내용을 반환합니다.
+    찾지 못하면 기본 문자열을 반환합니다.
+    """
+    prefix = "사용자 요청:"
+    for entry in history:
+        if isinstance(entry, str) and entry.startswith(prefix):
+            return entry[len(prefix):].strip()
+    return "이전 작업을 계속하세요."
+
+
+def _validate_tool_arguments(tool_function, tool_name: str, arguments: dict) -> None:
+    """LLM이 생성한 tool 인자를 함수 서명과 대조하여 검증합니다.
+
+    허용되지 않은 인자가 있으면 ValueError를 발생시킵니다.
+    **kwargs를 받는 함수나 서명 조회가 불가능한 경우에는 검증을 생략합니다.
+    """
+    try:
+        sig = inspect.signature(tool_function)
+    except (ValueError, TypeError):
+        return
+    # **kwargs 파라미터가 있으면 모든 keyword 인자를 허용
+    if any(
+        p.kind == inspect.Parameter.VAR_KEYWORD
+        for p in sig.parameters.values()
+    ):
+        return
+    allowed = set(sig.parameters.keys())
+    unknown = set(arguments.keys()) - allowed
+    if unknown:
+        raise ValueError(
+            f"도구 '{tool_name}'에 허용되지 않은 인자: {unknown}. 허용된 인자: {allowed}"
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    graph_manager.init_db()
+    agent_config_manager.init_db()
+    issue_tracker.init_db()
     await tool_registry.initialize()
     yield
     await tool_registry.shutdown()
 
-app = FastAPI(title="Gemini Agent Orchestrator", lifespan=lifespan)
+app = FastAPI(title="Multi-Provider Agent Orchestrator", lifespan=lifespan)
+
+from .web_router import router as web_router  # noqa: E402
+app.include_router(web_router)
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request, exc: Exception):
+    import traceback as _tb
+    issue_tracker.capture(
+        error_message=str(exc),
+        error_type=type(exc).__name__,
+        traceback=_tb.format_exc(),
+        context=f"{request.method} {request.url.path}",
+        source="api_server",
+        severity="error",
+    )
+    return JSONResponse(status_code=500, content={"detail": f"내부 서버 오류: {type(exc).__name__}"})
 
 @app.post("/agent/decide_and_act", response_model=AgentResponse)
 async def decide_and_act(request: AgentRequest):
@@ -71,8 +162,9 @@ async def decide_and_act(request: AgentRequest):
             history.append(f"요구사항 파일 참조: {', '.join(request.requirement_paths)}")
             for path in request.requirement_paths:
                 try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        requirements_content += f"--- {os.path.basename(path)} ---\n"
+                    real_path = _validate_requirement_path(path)
+                    with open(real_path, 'r', encoding='utf-8') as f:
+                        requirements_content += f"--- {os.path.basename(real_path)} ---\n"
                         requirements_content += f.read()
                         requirements_content += "\n-----------------------------------\n\n"
                 except Exception as e:
@@ -96,11 +188,12 @@ async def decide_and_act(request: AgentRequest):
                     message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
                 )
             
+            history = _prune_history(history)
             plan_dicts = [group.model_dump() for group in plan_list]
             history_manager.save_conversation(
                 convo_id, history, f"계획: {plan_list[0].description[:20]}...", plan_dicts, 0, is_final=False
             )
-            
+
             first_group = plan_list[0]
             return AgentResponse(
                 conversation_id=convo_id,
@@ -111,6 +204,9 @@ async def decide_and_act(request: AgentRequest):
             )
 
         except Exception as e:
+            issue_tracker.capture_exception(
+                e, context=f"generate_execution_plan convo_id={convo_id}", source="agent"
+            )
             history.append(f"계획 수립 오류: {e}")
             # (수정 2) 누락된 인자 plan=[], current_group_index=0 추가
             history_manager.save_conversation(
@@ -125,7 +221,7 @@ async def decide_and_act(request: AgentRequest):
 
     else:
         try:
-            first_query = next((h.split(":", 1)[1].strip() for h in history if h.startswith("사용자 요청:")), "이전 작업을 계속하세요.")
+            first_query = _extract_first_query(history)
             
             plan_list = await generate_execution_plan(
                 user_query=first_query,
@@ -170,6 +266,7 @@ async def decide_and_act(request: AgentRequest):
                     topic_split_info=topic_split_info,
                 )
             
+            history = _prune_history(history)
             plan_dicts = [group.model_dump() for group in plan_list]
             history_manager.save_conversation(
                 convo_id, history, data.get("title", "진행 중"), plan_dicts, 0, is_final=False
@@ -185,6 +282,9 @@ async def decide_and_act(request: AgentRequest):
             )
         
         except Exception as e:
+             issue_tracker.capture_exception(
+                 e, context=f"re-plan convo_id={convo_id}", source="agent"
+             )
              history.append(f"다음 단계 계획 중 오류: {e}")
              # (수정 2) 누락된 인자 plan=[], current_group_index=0 추가
              history_manager.save_conversation(
@@ -244,6 +344,7 @@ async def execute_group(request: AgentRequest):
                 )
 
             history.append(f"  - 도구 실행: {task.tool_name} (인자: {task.arguments})")
+            _validate_tool_arguments(tool_function, task.tool_name, task.arguments)
 
             t_start = time.monotonic()
             try:
@@ -280,8 +381,12 @@ async def execute_group(request: AgentRequest):
                 raise tool_err
 
             result_str = str(result)
-            if len(result_str) > 1000:
-                result_str = result_str[:1000] + "... (결과가 너무 길어 잘림)"
+            if len(result_str) > MAX_TOOL_RESULT_LENGTH:
+                logging.warning(
+                    f"도구 '{task.tool_name}' 결과가 {MAX_TOOL_RESULT_LENGTH}자를 초과하여 잘렸습니다. "
+                    f"(원래 길이: {len(result_str)}자)"
+                )
+                result_str = result_str[:MAX_TOOL_RESULT_LENGTH] + "... (결과가 너무 길어 잘림)"
 
             history.append(f"  - 실행 결과: {result_str}")
 
@@ -293,6 +398,9 @@ async def execute_group(request: AgentRequest):
         )
 
     except Exception as e:
+        issue_tracker.capture_exception(
+            e, context=f"execute_group group_id={group_to_execute.group_id}", source="tool"
+        )
         overall_success = False
         history.append(f"그룹 실행 중 오류 발생: {e}")
         history_manager.save_conversation(
@@ -323,3 +431,10 @@ async def execute_group(request: AgentRequest):
         history=history,
         message=f"그룹 [{group_to_execute.group_id}] 실행 완료"
     )
+
+
+# StaticFiles는 반드시 마지막에 마운트 (라우팅 우선순위)
+import os as _os
+_static_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "static")
+if _os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
