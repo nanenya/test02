@@ -28,6 +28,11 @@ _mcp_tools: Dict[str, dict] = {}  # tool_name -> {"session": session, "descripti
 _tool_providers: Dict[str, List[dict]] = {}  # tool_name -> [{"server": name, "session": session, "description": str}]
 _tool_server_preferences: Dict[str, str] = {}  # tool_name -> preferred server_name
 
+# P3-D: 온디맨드 MCP — 미연결 서버 설정 캐시 (server_name -> config)
+_on_demand_configs: Dict[str, dict] = {}
+# on-demand 도구가 어느 서버 소속인지 역인덱스 (tool_name -> server_name)
+_on_demand_tool_map: Dict[str, str] = {}
+
 
 def _load_local_modules():
     """LOCAL_MODULES에 정의된 커스텀 모듈을 로드합니다.
@@ -38,22 +43,14 @@ def _load_local_modules():
         # ── DB 우선 경로 ──────────────────────────────────────────
         try:
             from . import mcp_db_manager  # 지연 임포트 (순환 방지)
-            db_funcs = mcp_db_manager.list_functions(module_group=module_name)
-            if db_funcs:
-                cache_file = mcp_db_manager.generate_temp_module(module_name)
-                spec = importlib.util.spec_from_file_location(
-                    f"mcp_cache.{module_name}", cache_file
-                )
-                if spec and spec.loader:
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    for name, func in inspect.getmembers(module, inspect.isfunction):
-                        if not name.startswith("_"):
-                            TOOLS[name] = func
-                            description = func.__doc__.strip() if func.__doc__ else name
-                            TOOL_DESCRIPTIONS[name] = description
-                            logging.info(f"Local tool loaded (DB): {name}")
-                    continue
+            funcs_dict = mcp_db_manager.load_module_in_memory(module_name)
+            if funcs_dict:
+                for func_name, func in funcs_dict.items():
+                    TOOLS[func_name] = func
+                    description = func.__doc__.strip() if func.__doc__ else func_name
+                    TOOL_DESCRIPTIONS[func_name] = description
+                logging.info("DB 인메모리 로드: %s (%d개)", module_name, len(funcs_dict))
+                continue
         except Exception as e:
             logging.warning(f"DB load failed for {module_name}, falling back to file: {e}")
 
@@ -124,7 +121,10 @@ async def _connect_mcp_server(exit_stack: AsyncExitStack, server_config: dict):
 
 
 async def initialize():
-    """모든 로컬 모듈과 MCP 서버를 초기화합니다."""
+    """모든 로컬 모듈과 MCP 서버를 초기화합니다.
+
+    P3-D: on_demand=true 서버는 연결을 지연하고 설정만 캐시합니다.
+    """
     global _exit_stack
 
     # 로컬 모듈 로드
@@ -136,6 +136,12 @@ async def initialize():
 
     failed_servers = []
     for server_config in config.MCP_SERVERS:
+        # P3-D: on_demand 서버는 즉시 연결하지 않고 캐시만 저장
+        if server_config.get("on_demand", False):
+            _on_demand_configs[server_config["name"]] = server_config
+            logging.info(f"MCP server [{server_config['name']}] 온디맨드 등록 (지연 연결)")
+            continue
+
         before = len(_mcp_sessions)
         await _connect_mcp_server(_exit_stack, server_config)
         if len(_mcp_sessions) == before:
@@ -153,7 +159,8 @@ async def initialize():
 
     logging.info(
         f"Tool registry initialized: "
-        f"{len(TOOLS)} local tools, {len(_mcp_tools)} MCP tools"
+        f"{len(TOOLS)} local tools, {len(_mcp_tools)} MCP tools, "
+        f"{len(_on_demand_configs)} on-demand servers"
     )
 
 
@@ -167,7 +174,43 @@ async def shutdown():
     _mcp_tools.clear()
     _tool_providers.clear()
     _tool_server_preferences.clear()
+    _on_demand_configs.clear()
+    _on_demand_tool_map.clear()
     logging.info("Tool registry shutdown complete")
+
+
+async def ensure_tool_server_connected(tool_name: str) -> None:
+    """P3-D: on-demand 서버의 도구가 요청될 때 지연 연결합니다.
+
+    이미 연결된 도구이거나 로컬 도구이면 아무것도 하지 않습니다.
+    """
+    global _exit_stack
+    resolved_name = config.TOOL_NAME_ALIASES.get(tool_name, tool_name)
+
+    # 이미 연결된 경우 스킵
+    if resolved_name in TOOLS or resolved_name in _mcp_tools:
+        return
+
+    # on-demand 도구 역인덱스에서 서버 이름 조회
+    server_name = _on_demand_tool_map.get(resolved_name)
+    if server_name and server_name in _mcp_sessions:
+        return  # 이미 연결됨
+
+    # on-demand 서버 설정을 순회하며 해당 도구를 제공하는 서버 탐색
+    for sname, sconfig in list(_on_demand_configs.items()):
+        if sname in _mcp_sessions:
+            continue  # 이미 연결된 서버
+        logging.info(f"[온디맨드] '{resolved_name}' 요청 → [{sname}] 지연 연결 시도")
+        if _exit_stack is None:
+            _exit_stack = AsyncExitStack()
+            await _exit_stack.__aenter__()
+        await _connect_mcp_server(_exit_stack, sconfig)
+        # 연결 후 해당 서버 도구 역인덱스 갱신
+        for tname, tentry in _mcp_tools.items():
+            if tentry.get("server") == sname:
+                _on_demand_tool_map[tname] = sname
+        if resolved_name in _mcp_tools:
+            break
 
 
 def get_tool(name: str) -> Optional[Callable]:

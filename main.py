@@ -26,7 +26,7 @@ from orchestrator.history_manager import (
 )
 from orchestrator import mcp_manager
 
-app = typer.Typer()
+app = typer.Typer(no_args_is_help=False)
 mcp_app = typer.Typer(help="MCP 서버 관리 명령어")
 func_app = typer.Typer(help="MCP 함수 DB 관리 명령어")
 mcp_app.add_typer(func_app, name="function")
@@ -49,11 +49,209 @@ workflow_app = typer.Typer(help="워크플로우 관리 명령어")
 app.add_typer(workflow_app, name="workflow")
 persona_app = typer.Typer(help="페르소나 관리 명령어")
 app.add_typer(persona_app, name="persona")
+issue_app = typer.Typer(help="이슈 관리 명령어")
+app.add_typer(issue_app, name="issue")
+test_app = typer.Typer(help="테스트 파일 DB 관리 명령어")
+app.add_typer(test_app, name="test")
 
 console = Console()
 
+
+def _print_help() -> None:
+    """상세 도움말 출력 — 실행 방법이 틀렸을 때 또는 인수 없이 실행했을 때 호출됩니다."""
+    from rich.rule import Rule
+
+    def rule(title: str) -> None:
+        console.print(Rule(f"[bold yellow]{title}[/bold yellow]", style="dim", align="left"))
+
+    console.print()
+    console.print(Rule("[bold cyan]Multi-Provider AI Agent Orchestrator CLI[/bold cyan]", style="cyan"))
+    console.print(
+        "[dim]ReAct 기반 AI 에이전트 | FastAPI + Typer + MCP SDK[/dim]",
+        justify="center",
+    )
+    console.print()
+    console.print(
+        "  [bold]사용법:[/bold]  [green]python main.py[/green] [bold cyan]<명령>[/bold cyan] [옵션...]"
+        "    │    "
+        "[green]python main.py[/green] [bold cyan]<명령>[/bold cyan] [bold]--help[/bold]  "
+        "[dim](명령별 상세 도움말)[/dim]"
+    )
+    console.print()
+
+    rule("핵심 명령")
+    console.print("  [bold cyan]server[/bold cyan]   FastAPI 오케스트레이터 서버 실행  [dim]--host  --port  --reload[/dim]")
+    console.print("  [bold cyan]run[/bold cyan]      AI 에이전트 실행  [dim]-q <쿼리>  또는  -c <대화ID> 계속  -a(자동) --max-steps N[/dim]")
+    console.print("  [bold cyan]list[/bold cyan]     저장된 대화 목록 조회  [dim]-g 그룹  -k 키워드  -t 토픽  -s 상태[/dim]")
+    console.print("  [bold cyan]graph[/bold cyan]    대화 관계 그래프 출력  [dim]-c 중심ID  -d 깊이[/dim]")
+    console.print("  [bold cyan]migrate[/bold cyan]  JSON 히스토리 → SQLite 마이그레이션  [dim]--dry-run[/dim]")
+    console.print()
+
+    rule("AI 모델 관리  (model)")
+    console.print("  [bold cyan]model status[/bold cyan]                    현재 활성 프로바이더 / 모델 확인")
+    console.print("  [bold cyan]model list[/bold cyan] [dim]<provider>[/dim]          프로바이더별 사용 가능 모델 목록")
+    console.print("  [bold cyan]model set[/bold cyan]  [dim]<provider> <model>[/dim]  활성 모델 변경")
+    console.print()
+
+    rule("MCP 서버 관리  (mcp)")
+    console.print("  [bold cyan]mcp[/bold cyan]  [dim]list · add · remove · search · enable · disable · stats[/dim]")
+    console.print("  [bold cyan]mcp function[/bold cyan]  [dim]add · list · show · versions · test · import · update · activate · template · edit-test[/dim]")
+    console.print()
+
+    rule("대화 관리  (group / topic / keyword)")
+    console.print("  [bold cyan]group[/bold cyan]    [dim]list · create · delete · add-convo · remove-convo[/dim]")
+    console.print("  [bold cyan]topic[/bold cyan]    [dim]list · create · delete · link · add-convo[/dim]")
+    console.print("  [bold cyan]keyword[/bold cyan]  [dim]list · edit · search[/dim]")
+    console.print()
+
+    rule("시스템 프롬프트  (prompt)")
+    console.print("  [bold cyan]prompt[/bold cyan]  [dim]list · show · create · edit · delete · import[/dim]")
+    console.print()
+
+    rule("에이전트 설정  (skill / macro / workflow / persona)")
+    console.print("  [bold cyan]skill[/bold cyan]     [dim]list · sync · enable · disable · show[/dim]")
+    console.print("  [bold cyan]macro[/bold cyan]     [dim]list · show · create · edit · delete · render[/dim]")
+    console.print("  [bold cyan]workflow[/bold cyan]  [dim]list · show · create · add-step · delete[/dim]")
+    console.print("  [bold cyan]persona[/bold cyan]   [dim]list · show · create · edit · delete · set-default · detect[/dim]")
+    console.print()
+
+    rule("이슈 & 테스트  (issue / test)")
+    console.print("  [bold cyan]issue[/bold cyan]  [dim]list · show · resolve · ignore[/dim]")
+    console.print("  [bold cyan]test[/bold cyan]   [dim]import · import-all · list · show · run · run-all[/dim]")
+    console.print()
+
+    rule("사용 예시")
+    console.print("  [green]python main.py server[/green]                    [dim]# 서버 시작[/dim]")
+    console.print('  [green]python main.py run -q "파일 목록 알려줘"[/green]      [dim]# 새 쿼리 실행[/dim]')
+    console.print('  [green]python main.py run -q "빌드 수정해줘" --auto[/green]  [dim]# 자동 실행 (승인 생략)[/dim]')
+    console.print('  [green]python main.py run -q "..." -a --max-steps 20[/green] [dim]# 최대 20단계 자동[/dim]')
+    console.print("  [green]python main.py run -c <대화ID>[/green]               [dim]# 기존 대화 계속[/dim]")
+    console.print("  [green]python main.py model status[/green]              [dim]# 현재 모델 확인[/dim]")
+    console.print("  [green]python main.py issue list[/green]                [dim]# 이슈 목록 조회[/dim]")
+    console.print("  [green]python main.py run --help[/green]                [dim]# run 명령 상세 도움말[/dim]")
+    console.print()
+
+
+@app.callback(invoke_without_command=True)
+def _main_callback(ctx: typer.Context) -> None:
+    """Multi-Provider AI Agent Orchestrator CLI"""
+    if ctx.invoked_subcommand is None:
+        _print_help()
+        raise typer.Exit()
+
+
+def _fmt_usage(usage: dict) -> str:
+    """토큰 사용량 dict를 한 줄 문자열로 포맷합니다."""
+    if not usage:
+        return ""
+    in_t = usage.get("input_tokens", 0)
+    out_t = usage.get("output_tokens", 0)
+    cost = usage.get("cost_usd", 0.0)
+    provider = usage.get("provider", "")
+    parts = [f"입력 {in_t:,} · 출력 {out_t:,} tok"]
+    if cost > 0:
+        cost_str = f"${cost:.6f}" if cost < 0.0001 else (f"${cost:.4f}" if cost < 0.01 else f"${cost:.2f}")
+        parts.append(f"비용 {cost_str}")
+    elif provider == "ollama":
+        parts.append("무료 (로컬)")
+    rl_limit = usage.get("rate_limit_limit")
+    rl_rem = usage.get("rate_limit_remaining")
+    if rl_limit and rl_rem is not None:
+        pct = rl_rem / rl_limit * 100
+        parts.append(f"잔여 {rl_rem:,}/{rl_limit:,} tok ({pct:.0f}%)")
+    return "  │  ".join(parts)
+
+
 ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 PROMPTS_DIR = "system_prompts"
+
+# --auto 모드에서 사용자 확인이 필요한 위험 도구 목록
+_DANGEROUS_TOOLS: frozenset = frozenset({
+    # 파일/디렉토리 삭제
+    "delete_file", "remove_file", "delete_directory", "remove_directory",
+    "delete", "remove", "unlink", "rmdir",
+    # git 원격/파괴적 작업
+    "git_push", "git_force_push", "git_reset", "git_clean",
+    # 셸/코드 실행 (잠재적 부작용)
+    "execute_command", "run_command", "shell_exec", "bash",
+    # DB 파괴
+    "drop_table", "delete_database", "truncate_table",
+})
+
+
+def _check_dangerous_tools(execution_group: dict) -> List[str]:
+    """실행 그룹 내 위험 도구 이름을 반환합니다."""
+    return [
+        task.get("tool_name", "")
+        for task in execution_group.get("tasks", [])
+        if task.get("tool_name", "").lower() in _DANGEROUS_TOOLS
+    ]
+
+
+# P1-C: 컨텍스트 파일 자동 주입 (AGENTS.md / README.md)
+_CONTEXT_FILES = ["AGENTS.md", "README.md"]
+_CONTEXT_MAX_BYTES = 8 * 1024  # 파일당 최대 8KB
+
+
+# P2-A: 미완료 항목 키워드 목록
+_INCOMPLETE_MARKERS = [
+    "TODO", "FIXME", "HACK", "XXX",
+    "미완료", "추후", "나중에", "해야 할", "남은 작업", "아직", "보류",
+    "[ ]",  # Markdown 체크박스 미완료
+]
+_TODO_MAX_RETRIES = 3  # Todo Enforcer 최대 재시도 횟수
+
+
+def _scan_incomplete_markers(history: List[str]) -> List[str]:
+    """히스토리에서 미완료 마커가 포함된 항목을 반환합니다."""
+    found = []
+    for entry in history[-10:]:  # 최근 10개 항목만 검사
+        if not isinstance(entry, str):
+            continue
+        for marker in _INCOMPLETE_MARKERS:
+            if marker in entry:
+                # 해당 줄만 추출 (최대 200자)
+                for line in entry.splitlines():
+                    if marker in line:
+                        found.append(line.strip()[:200])
+                break
+    return found
+
+
+def _load_context_files(start_dir: Optional[str] = None) -> str:
+    """작업 디렉토리부터 상위로 올라가며 AGENTS.md / README.md 를 찾아 내용을 반환합니다.
+
+    여러 파일이 있으면 개행으로 구분해 합칩니다.
+    파일당 _CONTEXT_MAX_BYTES를 초과하면 잘라냅니다.
+    """
+    search_dir = Path(start_dir or os.getcwd()).resolve()
+    visited: set = set()
+    collected: List[str] = []
+
+    # 현재 디렉토리 → 상위 3단계까지 탐색
+    for directory in [search_dir] + list(search_dir.parents)[:3]:
+        if directory in visited:
+            continue
+        visited.add(directory)
+        for fname in _CONTEXT_FILES:
+            fpath = directory / fname
+            if fpath.is_file():
+                try:
+                    raw = fpath.read_bytes()[:_CONTEXT_MAX_BYTES].decode("utf-8", errors="replace")
+                    collected.append(f"## [{fname}] ({fpath})\n{raw}")
+                except Exception:
+                    pass
+
+    return "\n\n".join(collected)
+
+
+# P1-B: 태스크 카테고리 → model_preference 매핑
+_CATEGORY_TO_MODEL_PREF: dict = {
+    "quick":    "standard",   # 단순 수정, 타이핑 수정
+    "code":     "high",       # 코드 작성/분석
+    "analysis": "high",       # 심층 분석, 아키텍처 결정
+    "creative": "high",       # 창의적 작업, 문서 작성
+}
 
 os.makedirs(PROMPTS_DIR, exist_ok=True)
 default_prompt_path = os.path.join(PROMPTS_DIR, "default.txt")
@@ -187,6 +385,13 @@ def run(
     model_pref: Annotated[str, typer.Option("--model-pref", "-m", help="모델 선호도 (auto, standard, high)")] = "auto",
     system_prompts: Annotated[List[str], typer.Option("--gem", "-g", help="사용할 시스템 프롬프트 (Gem) 이름 (예: default)")] = None,
     persona: Annotated[Optional[str], typer.Option("--persona", "-p", help="사용할 페르소나 이름 (DB에서 조회)")] = None,
+    auto: Annotated[bool, typer.Option("--auto", "-a", help="자동 실행 모드: 계획 승인 없이 완료까지 자동 반복")] = False,
+    force: Annotated[bool, typer.Option("--force", "-f", help="--auto 모드에서 위험 도구도 자동 승인 (주의 필요)")] = False,
+    max_steps: Annotated[int, typer.Option("--max-steps", help="자동 모드 최대 실행 단계 수 (0=무제한, 기본 50)")] = 50,
+    category: Annotated[Optional[str], typer.Option("--category", "-C", help="태스크 유형 (quick/code/analysis/creative) → 모델 자동 선택")] = None,
+    no_context: Annotated[bool, typer.Option("--no-context", help="AGENTS.md / README.md 자동 주입 비활성화")] = False,
+    plan: Annotated[bool, typer.Option("--plan", help="Prometheus 모드: 실행 전 요구사항 명확화 질문")] = False,
+    summarize: Annotated[bool, typer.Option("--summarize", help="히스토리 임계치 초과 시 LLM 요약 압축 활성화")] = False,
 ):
     """
     AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다.
@@ -194,6 +399,18 @@ def run(
     if not query and not continue_id:
         console.print("[bold red]오류: --query 또는 --continue 옵션 중 하나는 반드시 필요합니다.[/bold red]")
         raise typer.Exit()
+
+    # P1-B: 카테고리 → model_preference 자동 매핑
+    if category:
+        mapped = _CATEGORY_TO_MODEL_PREF.get(category.lower())
+        if mapped:
+            model_pref = mapped
+            console.print(f"[dim]카테고리 '{category}' → 모델 선호도 '{model_pref}' 자동 설정[/dim]")
+        else:
+            console.print(
+                f"[bold yellow]경고: 알 수 없는 카테고리 '{category}'. "
+                f"사용 가능: {', '.join(_CATEGORY_TO_MODEL_PREF)}[/bold yellow]"
+            )
 
     _ensure_ollama_running()
 
@@ -211,6 +428,31 @@ def run(
                     console.print(f"[bold yellow]경고: 프롬프트 파일 '{prompt_file}'을 읽을 수 없습니다: {e}[/bold yellow]")
             else:
                 console.print(f"[bold yellow]경고: 프롬프트 파일 '{prompt_file}'을 찾을 수 없습니다.[/bold yellow]")
+
+    # P1-C: AGENTS.md / README.md 자동 주입
+    if not no_context:
+        ctx_content = _load_context_files()
+        if ctx_content:
+            prompt_contents.insert(0, f"# 프로젝트 컨텍스트 (자동 주입)\n\n{ctx_content}")
+            console.print("[dim]📄 AGENTS.md / README.md 컨텍스트 자동 주입됨[/dim]")
+
+    # P2-C: Prometheus 모드 — 실행 전 요구사항 명확화 인터뷰
+    if plan and query:
+        console.print("[bold cyan]🧠 Prometheus 모드: 요구사항을 명확히 합니다...[/bold cyan]")
+        from orchestrator.llm_client import generate_clarifying_questions
+        questions = asyncio.run(generate_clarifying_questions(query, model_preference=model_pref))
+        if questions:
+            console.print("[bold yellow]실행 전 확인 사항:[/bold yellow]")
+            answers = []
+            for i, q in enumerate(questions, 1):
+                ans = typer.prompt(f"  [{i}] {q}")
+                answers.append(f"Q: {q}\nA: {ans}")
+            # 질문/답변을 쿼리에 컨텍스트로 추가
+            qa_context = "\n".join(answers)
+            query = f"{query}\n\n[사전 확인 사항]\n{qa_context}"
+            console.print("[dim]사전 확인 사항이 쿼리에 추가되었습니다.[/dim]")
+        else:
+            console.print("[dim]추가 확인 사항 없음. 바로 실행합니다.[/dim]")
 
     if query:
         convo_id, history = new_conversation()
@@ -250,6 +492,16 @@ def run(
         endpoint = "/agent/decide_and_act"
 
     # --- 상호작용 루프 ---
+    _sess_in = _sess_out = 0
+    _sess_cost = 0.0
+    _step_count = 0       # 자동 모드 실행 단계 카운터
+    _todo_retries = 0     # P2-A Todo Enforcer 재시도 카운터
+
+    if auto:
+        _limit_str = f"최대 {max_steps}단계" if max_steps > 0 else "무제한"
+        _force_str = " [bold red](--force: 위험 도구 자동 승인)[/bold red]" if force else ""
+        console.print(f"[bold cyan]🤖 자동 실행 모드[/bold cyan] ({_limit_str}){_force_str}")
+
     while True:
         try:
             response = client.post(f"{ORCHESTRATOR_URL}{endpoint}", json=request_data)
@@ -261,8 +513,39 @@ def run(
             convo_id = data.get("conversation_id")
             history = data.get("history")
 
+            # 토큰 사용량 누적
+            _usage = data.get("token_usage") or {}
+            if _usage:
+                _sess_in += _usage.get("input_tokens", 0)
+                _sess_out += _usage.get("output_tokens", 0)
+                _sess_cost += _usage.get("cost_usd", 0.0)
+
             if status == "FINAL_ANSWER":
                 console.print(f"\n[bold green]최종 답변:[/bold green]\n{message}")
+
+                # P2-A: Todo Enforcer — 미완료 항목 감지 후 재실행
+                if _todo_retries < _TODO_MAX_RETRIES:
+                    incomplete = _scan_incomplete_markers(history or [])
+                    if incomplete:
+                        _todo_retries += 1
+                        items_str = "\n".join(f"  - {i}" for i in incomplete[:5])
+                        console.print(
+                            f"\n[bold yellow]📋 Todo Enforcer: 미완료 항목 감지 "
+                            f"({_todo_retries}/{_TODO_MAX_RETRIES})[/bold yellow]\n{items_str}"
+                        )
+                        followup = (
+                            f"아직 완료되지 않은 항목이 있습니다:\n{items_str}\n\n"
+                            "위 항목들을 완료해 주세요."
+                        )
+                        endpoint = "/agent/decide_and_act"
+                        request_data = {
+                            "conversation_id": convo_id,
+                            "history": history,
+                            "user_input": followup,
+                            "model_preference": model_pref,
+                            "system_prompts": prompt_contents,
+                        }
+                        continue  # 루프 재진입
 
                 # topic_split_info 처리
                 topic_split_info = data.get("topic_split_info")
@@ -278,10 +561,48 @@ def run(
                         console.print(f"[green]대화가 분리되었습니다.[/green]")
                         console.print(f"  원본: {orig_id}")
                         console.print(f"  새 대화: {new_id}")
+
+                # 세션 토큰 사용량 합계
+                if _sess_in:
+                    sess_cost_str = (
+                        f"  │  총 비용 ${_sess_cost:.4f}" if _sess_cost > 0 else ""
+                    )
+                    console.print(
+                        f"[dim]📊 세션 합계  입력 {_sess_in:,} · 출력 {_sess_out:,} tok{sess_cost_str}[/dim]"
+                    )
                 break
 
             elif status == "STEP_EXECUTED":
+                _step_count += 1
                 console.print(f"[cyan]...{message}[/cyan]")
+
+                # 자동 모드 최대 단계 체크
+                if auto and max_steps > 0 and _step_count >= max_steps:
+                    console.print(
+                        f"\n[bold yellow]⚠️  최대 단계 수({max_steps})에 도달했습니다.[/bold yellow]"
+                    )
+                    action = typer.prompt(
+                        "계속 진행할까요? [Y(계속)/n(중단)]", default="Y"
+                    ).lower()
+                    if action not in ["y", "yes", ""]:
+                        console.print("[bold red]자동 실행을 중단합니다.[/bold red]")
+                        break
+                    _step_count = 0  # 카운터 리셋 후 계속
+
+                # P2-D: 히스토리 임계치 초과 시 LLM 요약 압축
+                _SUMMARIZE_THRESHOLD = 30
+                if summarize and history and len(history) >= _SUMMARIZE_THRESHOLD:
+                    console.print(
+                        f"[dim]📝 히스토리 {len(history)}개 항목 → LLM 요약 중...[/dim]"
+                    )
+                    from orchestrator.llm_client import summarize_history as _summarize
+                    summary = asyncio.run(_summarize(history[:-5], model_preference=model_pref))
+                    if summary:
+                        history = [f"[이전 대화 요약]\n{summary}"] + history[-5:]
+                        console.print(
+                            f"[dim]히스토리 압축 완료: {_SUMMARIZE_THRESHOLD}개 → {len(history)}개[/dim]"
+                        )
+
                 console.print("[cyan]...다음 단계를 계획합니다...[/cyan]")
                 endpoint = "/agent/decide_and_act"
                 request_data = {
@@ -294,29 +615,76 @@ def run(
 
             elif status == "PLAN_CONFIRMATION":
                 console.print(f"\n[bold yellow]다음 실행 계획:[/bold yellow]\n{message}")
-                action = typer.prompt("승인하시겠습니까? [Y(예)/n(아니오)/edit(계획 수정)]", default="Y").lower()
+                if _usage:
+                    console.print(f"[dim]📊 {_fmt_usage(_usage)}[/dim]")
 
-                if action in ["y", "yes"]:
-                    console.print("[cyan]...승인됨. 계획 그룹을 실행합니다...[/cyan]")
+                if auto:
+                    # 위험 도구 포함 여부 확인
+                    exec_group = data.get("execution_group") or {}
+                    dangerous = _check_dangerous_tools(exec_group)
+
+                    if dangerous and not force:
+                        console.print(
+                            f"\n[bold red]⚠️  위험 도구 감지: {', '.join(dangerous)}[/bold red]"
+                        )
+                        console.print("[dim]--force 플래그를 사용하면 위험 도구도 자동 승인됩니다.[/dim]")
+                        action = typer.prompt(
+                            "위험 도구가 포함되어 있습니다. 계속하시겠습니까? [Y/n/edit]",
+                            default="Y",
+                        ).lower()
+                        if action == "edit":
+                            edited_instruction = typer.prompt("어떻게 수정할까요? (새로운 계획 수립)")
+                            endpoint = "/agent/decide_and_act"
+                            request_data = {
+                                "conversation_id": convo_id,
+                                "history": history,
+                                "user_input": edited_instruction,
+                                "model_preference": model_pref,
+                                "system_prompts": prompt_contents,
+                            }
+                            continue
+                        elif action not in ["y", "yes", ""]:
+                            console.print("[bold red]자동 실행을 중단합니다.[/bold red]")
+                            break
+                    else:
+                        step_info = f" (단계 {_step_count + 1}" + (f"/{max_steps}" if max_steps > 0 else "") + ")"
+                        console.print(f"[dim cyan]🤖 자동 승인{step_info}[/dim cyan]")
+
+                    console.print("[cyan]...계획 그룹을 실행합니다...[/cyan]")
                     endpoint = "/agent/execute_group"
                     request_data = {
                         "conversation_id": convo_id,
                         "history": history,
                         "model_preference": model_pref,
                     }
-                elif action == "edit":
-                    edited_instruction = typer.prompt("어떻게 수정할까요? (새로운 계획 수립)")
-                    endpoint = "/agent/decide_and_act"
-                    request_data = {
-                        "conversation_id": convo_id,
-                        "history": history,
-                        "user_input": edited_instruction,
-                        "model_preference": model_pref,
-                        "system_prompts": prompt_contents,
-                    }
+
                 else:
-                    console.print("[bold red]작업을 중단합니다.[/bold red]")
-                    break
+                    # 수동 승인 모드 (기존 동작)
+                    action = typer.prompt(
+                        "승인하시겠습니까? [Y(예)/n(아니오)/edit(계획 수정)]", default="Y"
+                    ).lower()
+
+                    if action in ["y", "yes"]:
+                        console.print("[cyan]...승인됨. 계획 그룹을 실행합니다...[/cyan]")
+                        endpoint = "/agent/execute_group"
+                        request_data = {
+                            "conversation_id": convo_id,
+                            "history": history,
+                            "model_preference": model_pref,
+                        }
+                    elif action == "edit":
+                        edited_instruction = typer.prompt("어떻게 수정할까요? (새로운 계획 수립)")
+                        endpoint = "/agent/decide_and_act"
+                        request_data = {
+                            "conversation_id": convo_id,
+                            "history": history,
+                            "user_input": edited_instruction,
+                            "model_preference": model_pref,
+                            "system_prompts": prompt_contents,
+                        }
+                    else:
+                        console.print("[bold red]작업을 중단합니다.[/bold red]")
+                        break
 
             elif status == "ERROR":
                 console.print(f"[bold red]서버 오류: {message}[/bold red]")
@@ -1248,7 +1616,7 @@ def model_list(
 
 @model_app.command(name="set")
 def model_set(
-    provider: Annotated[str, typer.Argument(help="프로바이더 이름 (gemini, claude, openai, grok)")],
+    provider: Annotated[str, typer.Argument(help="프로바이더 이름 (gemini, claude, openai, grok, ollama)")],
     model: Annotated[Optional[str], typer.Argument(help="모델 ID (생략 시 목록에서 선택)")] = None,
 ):
     """활성 프로바이더와 모델을 변경합니다.
@@ -1865,5 +2233,269 @@ def persona_detect(
         console.print("[yellow]매치되는 페르소나가 없습니다. 기본 시스템 동작을 사용합니다.[/yellow]")
 
 
+# ── issue 명령어 ──────────────────────────────────────────────────
+
+@issue_app.command("list")
+def issue_list(
+    status: Optional[str] = typer.Option(None, "--status", help="open|in_progress|resolved|ignored"),
+    source: Optional[str] = typer.Option(None, "--source", help="api_server|agent|tool|cli"),
+    limit: int = typer.Option(50, "--limit", help="최대 표시 개수"),
+):
+    """이슈 목록을 출력합니다."""
+    from orchestrator import issue_tracker
+    try:
+        issues = issue_tracker.list_issues(status=status, source=source, limit=limit)
+        if not issues:
+            console.print("[yellow]조건에 맞는 이슈가 없습니다.[/yellow]")
+            return
+        table = Table(title="이슈 목록", show_lines=True)
+        table.add_column("ID", style="bold", width=5)
+        table.add_column("Severity", width=10)
+        table.add_column("Status", width=12)
+        table.add_column("Source", width=12)
+        table.add_column("Title", width=60)
+        table.add_column("Created At", width=19)
+        severity_styles = {"critical": "bold red", "error": "red", "warning": "yellow"}
+        for issue in issues:
+            sev = issue["severity"]
+            style = severity_styles.get(sev, "")
+            table.add_row(
+                str(issue["id"]),
+                f"[{style}]{sev}[/{style}]" if style else sev,
+                issue["status"],
+                issue["source"],
+                issue["title"][:60],
+                (issue["created_at"] or "")[:19],
+            )
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]이슈 목록 조회 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@issue_app.command("show")
+def issue_show(issue_id: int = typer.Argument(..., help="이슈 ID")):
+    """이슈 상세 정보를 출력합니다."""
+    from orchestrator import issue_tracker
+    try:
+        issue = issue_tracker.get_issue(issue_id)
+        if issue is None:
+            console.print(f"[red]이슈 #{issue_id}를 찾을 수 없습니다.[/red]")
+            raise typer.Exit(1)
+        console.print(f"[bold]ID:[/bold] {issue['id']}")
+        console.print(f"[bold]Title:[/bold] {issue['title']}")
+        console.print(f"[bold]Error Type:[/bold] {issue['error_type']}")
+        console.print(f"[bold]Error Message:[/bold] {issue['error_message']}")
+        console.print(f"[bold]Source:[/bold] {issue['source']}")
+        console.print(f"[bold]Severity:[/bold] {issue['severity']}")
+        console.print(f"[bold]Status:[/bold] {issue['status']}")
+        console.print(f"[bold]Context:[/bold] {issue['context']}")
+        console.print(f"[bold]Created At:[/bold] {issue['created_at']}")
+        console.print(f"[bold]Resolved At:[/bold] {issue['resolved_at'] or '-'}")
+        console.print(f"[bold]Resolution Note:[/bold] {issue['resolution_note'] or '-'}")
+        if issue["traceback"]:
+            console.print(f"[bold]Traceback:[/bold]")
+            console.print(f"[dim]{issue['traceback']}[/dim]")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]이슈 조회 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@issue_app.command("resolve")
+def issue_resolve(
+    issue_id: int = typer.Argument(..., help="이슈 ID"),
+    note: str = typer.Option("", "--note", help="해결 메모"),
+):
+    """이슈를 resolved 상태로 변경합니다."""
+    from orchestrator import issue_tracker
+    try:
+        ok = issue_tracker.update_status(issue_id, "resolved", resolution_note=note)
+        if ok:
+            console.print(f"[green]이슈 #{issue_id}가 resolved 처리되었습니다.[/green]")
+        else:
+            console.print(f"[red]이슈 #{issue_id}를 찾을 수 없습니다.[/red]")
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]이슈 resolve 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@issue_app.command("ignore")
+def issue_ignore(issue_id: int = typer.Argument(..., help="이슈 ID")):
+    """이슈를 ignored 상태로 변경합니다."""
+    from orchestrator import issue_tracker
+    try:
+        ok = issue_tracker.update_status(issue_id, "ignored")
+        if ok:
+            console.print(f"[yellow]이슈 #{issue_id}가 ignored 처리되었습니다.[/yellow]")
+        else:
+            console.print(f"[red]이슈 #{issue_id}를 찾을 수 없습니다.[/red]")
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]이슈 ignore 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+# ── test 명령어 ───────────────────────────────────────────────────
+
+@test_app.command("import")
+def test_import(file_path: str = typer.Argument(..., help="임포트할 테스트 파일 경로")):
+    """단일 테스트 파일을 DB에 저장합니다."""
+    from orchestrator import test_registry
+    try:
+        result = test_registry.import_test_file(file_path)
+        action = "신규 저장" if result["created"] else "갱신"
+        console.print(f"[green]{action}:[/green] {result['name']} ({result['file_path']})")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]임포트 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@test_app.command("import-all")
+def test_import_all():
+    """orchestrator/ 디렉토리의 test_*.py 파일을 모두 DB에 저장합니다."""
+    from orchestrator import test_registry
+    try:
+        results = test_registry.import_all()
+        if not results:
+            console.print("[yellow]임포트할 테스트 파일이 없습니다.[/yellow]")
+            return
+        for result in results:
+            if "error" in result:
+                console.print(f"[red]오류:[/red] {result['name']} — {result['error']}")
+            else:
+                action = "신규" if result["created"] else "갱신"
+                console.print(f"[green]{action}:[/green] {result['name']}")
+    except Exception as e:
+        console.print(f"[red]일괄 임포트 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@test_app.command("list")
+def test_list():
+    """DB에 저장된 테스트 목록을 표시합니다."""
+    from orchestrator import test_registry
+    try:
+        tests = test_registry.list_tests()
+        if not tests:
+            console.print("[yellow]저장된 테스트가 없습니다.[/yellow]")
+            return
+        table = Table(title="테스트 목록", show_lines=True)
+        table.add_column("ID", style="bold", width=5)
+        table.add_column("Name", width=40)
+        table.add_column("Status", width=10)
+        table.add_column("Lines", width=7)
+        table.add_column("Updated At", width=19)
+        status_styles = {"passed": "green", "failed": "red", "untested": "yellow"}
+        for t in tests:
+            st = t["status"]
+            style = status_styles.get(st, "")
+            lines = str(len(t["code"].splitlines()))
+            table.add_row(
+                str(t["id"]),
+                t["name"],
+                f"[{style}]{st}[/{style}]" if style else st,
+                lines,
+                (t["updated_at"] or "")[:19],
+            )
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]목록 조회 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@test_app.command("show")
+def test_show(name: str = typer.Argument(..., help="테스트 이름 (파일명 stem)")):
+    """저장된 테스트 코드를 출력합니다."""
+    from orchestrator import test_registry
+    try:
+        test = test_registry.get_test(name)
+        if test is None:
+            console.print(f"[red]테스트 '{name}'를 찾을 수 없습니다.[/red]")
+            raise typer.Exit(1)
+        console.print(f"[bold]Name:[/bold] {test['name']}")
+        console.print(f"[bold]File:[/bold] {test['file_path']}")
+        console.print(f"[bold]Status:[/bold] {test['status']}")
+        if test["last_output"]:
+            console.print(f"[bold]Last Output:[/bold]")
+            console.print(f"[dim]{test['last_output'][:500]}[/dim]")
+        console.print(f"[bold]Code:[/bold]")
+        console.print(f"[dim]{test['code']}[/dim]")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]테스트 조회 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@test_app.command("run")
+def test_run(name: str = typer.Argument(..., help="실행할 테스트 이름")):
+    """특정 테스트를 실행합니다."""
+    from orchestrator import test_registry
+    try:
+        console.print(f"[cyan]실행 중: {name}...[/cyan]")
+        result = test_registry.run_test(name)
+        if "error" in result:
+            console.print(f"[red]오류: {result['error']}[/red]")
+            raise typer.Exit(1)
+        if result["status"] == "passed":
+            console.print(f"[green]통과: {result['name']}[/green]")
+        else:
+            console.print(f"[red]실패: {result['name']}[/red]")
+        console.print(result["output"])
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]테스트 실행 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@test_app.command("run-all")
+def test_run_all():
+    """저장된 모든 테스트를 실행하고 요약을 출력합니다."""
+    from orchestrator import test_registry
+    try:
+        results = test_registry.run_all()
+        if not results:
+            console.print("[yellow]실행할 테스트가 없습니다.[/yellow]")
+            return
+        passed = [r for r in results if r.get("status") == "passed"]
+        failed = [r for r in results if r.get("status") == "failed"]
+        table = Table(title="전체 테스트 실행 결과", show_lines=True)
+        table.add_column("Name", width=40)
+        table.add_column("Status", width=10)
+        for r in results:
+            st = r.get("status", "error")
+            style = "green" if st == "passed" else "red"
+            table.add_row(r.get("name", "?"), f"[{style}]{st}[/{style}]")
+        console.print(table)
+        console.print(f"\n[green]통과: {len(passed)}[/green]  [red]실패: {len(failed)}[/red]")
+    except Exception as e:
+        console.print(f"[red]전체 실행 실패: {e}[/red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
-    app()
+    import sys
+    import click
+
+    try:
+        rv = app(standalone_mode=False)
+    except click.exceptions.UsageError as e:
+        console.print(f"\n[bold red]오류: {e.format_message()}[/bold red]\n")
+        _print_help()
+        sys.exit(2)
+    except click.exceptions.Abort:
+        console.print("\n[yellow]중단됨.[/yellow]")
+        sys.exit(1)
+    else:
+        sys.exit(rv if isinstance(rv, int) and rv != 0 else 0)

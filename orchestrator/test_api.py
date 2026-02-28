@@ -34,13 +34,15 @@ class TestDecideAndAct:
         """신규 사용자 입력 시 PLAN_CONFIRMATION 반환"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
              patch("orchestrator.api.history_manager") as mock_hm, \
-             patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan:
+             patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan, \
+             patch("orchestrator.api.classify_intent", new_callable=AsyncMock) as mock_intent:
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
             mock_hm.load_conversation.return_value = None
             mock_plan.return_value = [sample_group]
             mock_hm.save_conversation = MagicMock()
+            mock_intent.return_value = "task"
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -58,12 +60,14 @@ class TestDecideAndAct:
         """플래너가 빈 계획 반환 시 FINAL_ANSWER"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
              patch("orchestrator.api.history_manager") as mock_hm, \
-             patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan:
+             patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan, \
+             patch("orchestrator.api.classify_intent", new_callable=AsyncMock) as mock_intent:
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
             mock_hm.load_conversation.return_value = None
             mock_plan.return_value = []
+            mock_intent.return_value = "task"
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -103,6 +107,7 @@ class TestExecuteGroup:
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
+            mock_tr.ensure_tool_server_connected = AsyncMock()
             mock_hm.load_conversation.return_value = {
                 "id": "test-id",
                 "history": ["사용자 요청: test"],
@@ -129,6 +134,7 @@ class TestExecuteGroup:
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
+            mock_tr.ensure_tool_server_connected = AsyncMock()
             mock_hm.load_conversation.return_value = {
                 "id": "test-id",
                 "history": [],
@@ -353,6 +359,7 @@ class TestResultTruncationWarning:
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
+            mock_tr.ensure_tool_server_connected = AsyncMock()
             mock_hm.load_conversation.return_value = {
                 "id": "test-id",
                 "history": [],

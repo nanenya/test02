@@ -134,6 +134,7 @@ def load_mcp_config() -> tuple:
                     "command": s["command"],
                     "args": _resolve_args(s.get("args", [])),
                     "env": s.get("env"),
+                    "on_demand": s.get("on_demand", False),
                 })
             aliases = registry.get("tool_name_aliases", dict(_DEFAULT_TOOL_NAME_ALIASES))
             logging.info(f"MCP config loaded from {_REGISTRY_PATH}: {len(servers)} servers")
@@ -151,6 +152,7 @@ def load_mcp_config() -> tuple:
             "command": s["command"],
             "args": _resolve_args(s["args"]),
             "env": s.get("env"),
+            "on_demand": s.get("on_demand", False),
         })
     return servers, dict(_DEFAULT_TOOL_NAME_ALIASES)
 
