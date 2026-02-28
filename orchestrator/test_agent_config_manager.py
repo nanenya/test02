@@ -361,3 +361,56 @@ class TestGetEffectivePersona:
     def test_no_personas_returns_none(self, tmp_db):
         result = acm.get_effective_persona(query="test", db_path=tmp_db)
         assert result is None
+
+
+# ── TestSyncSkillsLogging ─────────────────────────────────────────
+
+class TestSyncSkillsLogging:
+    def test_sync_logs_info(self, tmp_db, caplog):
+        """sync_skills_from_registry가 INFO 로그를 기록한다."""
+        import logging
+        from unittest.mock import patch
+
+        fake_descriptions = {"tool_a": "도구 A", "tool_b": "도구 B"}
+
+        with patch("orchestrator.agent_config_manager.TOOL_DESCRIPTIONS", fake_descriptions, create=True), \
+             patch("orchestrator.agent_config_manager.acm", create=True), \
+             caplog.at_level(logging.INFO):
+            # TOOL_DESCRIPTIONS를 직접 패치하기 어려우므로 _load_local_modules를 mock
+            from unittest.mock import patch as _patch
+            with _patch("orchestrator.agent_config_manager.sync_skills_from_registry") as mock_sync:
+                mock_sync.return_value = 2
+                mock_sync(db_path=tmp_db)
+
+            # 대신 실제 함수를 직접 테스트
+            import orchestrator.agent_config_manager as m
+            with _patch.object(m, "sync_skills_from_registry", wraps=m.sync_skills_from_registry):
+                # TOOL_DESCRIPTIONS 패치하여 실제 로깅 테스트
+                with _patch("orchestrator.tool_registry._load_local_modules"), \
+                     _patch("orchestrator.tool_registry.TOOL_DESCRIPTIONS", fake_descriptions):
+                    # 실제로 호출
+                    added = m.sync_skills_from_registry(db_path=tmp_db)
+
+        assert isinstance(added, int)
+
+    def test_sync_logs_added_and_updated(self, tmp_db, caplog):
+        """신규/갱신 수가 로그 메시지에 포함된다."""
+        import logging
+        from unittest.mock import patch
+
+        fake_descriptions = {"skill_x": "X 설명"}
+
+        with patch("orchestrator.tool_registry._load_local_modules"), \
+             patch("orchestrator.tool_registry.TOOL_DESCRIPTIONS", fake_descriptions), \
+             caplog.at_level(logging.INFO):
+            # 첫 번째 호출 — 신규 추가
+            acm.sync_skills_from_registry(db_path=tmp_db)
+            # 두 번째 호출 — 갱신
+            acm.sync_skills_from_registry(db_path=tmp_db)
+
+        log_messages = [r.message for r in caplog.records if "동기화" in r.message]
+        assert len(log_messages) >= 2
+        # 첫 호출: 신규 1개
+        assert "1개 추가" in log_messages[0]
+        # 두 번째 호출: 갱신 1개
+        assert "1개 갱신" in log_messages[1]

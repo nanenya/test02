@@ -9,6 +9,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
+from .constants import utcnow
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -152,7 +153,7 @@ def migrate_json_to_sqlite(
 
         convo_id = data.get("id", json_file.stem)
         title = data.get("title", "Untitled")
-        last_updated = data.get("last_updated", datetime.now().isoformat())
+        last_updated = data.get("last_updated", utcnow())
         history_json = json.dumps(data.get("history", []), ensure_ascii=False)
         plan_json = json.dumps(data.get("plan", []), ensure_ascii=False)
         current_group_index = data.get("current_group_index", 0)
@@ -178,10 +179,23 @@ def migrate_json_to_sqlite(
     return migrated
 
 
+def _fetch_keywords(conn, convo_id: str) -> List[str]:
+    """주어진 대화 ID에 연결된 키워드 이름 목록을 반환합니다."""
+    rows = conn.execute(
+        """
+        SELECT k.name FROM keywords k
+        JOIN conversation_keywords ck ON ck.keyword_id = k.id
+        WHERE ck.conversation_id=?
+        """,
+        (convo_id,),
+    ).fetchall()
+    return [r["name"] for r in rows]
+
+
 # ── 대화 CRUD ────────────────────────────────────────────────────
 
 def create_conversation(convo_id: str, db_path: Path = DB_PATH) -> None:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             """
@@ -205,7 +219,7 @@ def save_conversation(
 ) -> str:
     """Upsert 대화. UUID 그대로 유지. convo_id 반환."""
     status = "final" if is_final else "active"
-    now = datetime.now().isoformat()
+    now = utcnow()
     history_json = json.dumps(history, ensure_ascii=False)
     plan_json = json.dumps(plan or [], ensure_ascii=False)
 
@@ -250,15 +264,7 @@ def load_conversation(
         data = dict(row)
         data["history"] = json.loads(data["history"])
         data["plan"] = json.loads(data["plan"])
-        kw_rows = conn.execute(
-            """
-            SELECT k.name FROM keywords k
-            JOIN conversation_keywords ck ON ck.keyword_id = k.id
-            WHERE ck.conversation_id=?
-            """,
-            (convo_id,),
-        ).fetchall()
-        data["keywords"] = [r["name"] for r in kw_rows]
+        data["keywords"] = _fetch_keywords(conn, convo_id)
         return data
 
 
@@ -314,15 +320,7 @@ def list_conversations(
         result = []
         for row in rows:
             d = dict(row)
-            kw_rows = conn.execute(
-                """
-                SELECT k.name FROM keywords k
-                JOIN conversation_keywords ck ON ck.keyword_id = k.id
-                WHERE ck.conversation_id=?
-                """,
-                (d["id"],),
-            ).fetchall()
-            d["keywords"] = [r["name"] for r in kw_rows]
+            d["keywords"] = _fetch_keywords(conn, d["id"])
             result.append(d)
         return result
 
@@ -340,7 +338,7 @@ def delete_conversation(convo_id: str, db_path: Path = DB_PATH) -> bool:
 def create_group(
     name: str, description: str = "", db_path: Path = DB_PATH
 ) -> int:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO groups (name, description, created_at) VALUES (?, ?, ?)",
@@ -397,7 +395,7 @@ def delete_group(group_id: int, db_path: Path = DB_PATH) -> bool:
 def create_topic(
     name: str, description: str = "", db_path: Path = DB_PATH
 ) -> int:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO topics (name, description, created_at) VALUES (?, ?, ?)",
@@ -603,7 +601,7 @@ def split_conversation(
     history_a = history[:split_point_index]
     history_b = history[split_point_index:]
     new_id = str(uuid.uuid4())
-    now = datetime.now().isoformat()
+    now = utcnow()
 
     with get_db(db_path) as conn:
         # 원본 축소

@@ -6,47 +6,29 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-02-27 (project02 개선 패턴 이식: constants/models/api/config/requirements/pytest.ini)
+> 마지막 갱신: 2026-02-27 (5개 섹션 DB 이관: requirements/change_log/deleted_files/test_status/issues 테이블)
 
 ### 0.1 완료된 요구사항 (Completed)
 
-| # | 요구사항 | 적용 파일 | 상태 | 비고 |
-|---|---------|-----------|------|------|
-| 37 | Ollama LLM 프로바이더 추가 | test_ollama_client.py(신규), test_model_manager.py, main.py | DONE | 5개 함수 테스트(18개), model_manager ollama fixture 추가(3개), model set 도움말 수정, 전체 246개 통과 |
-| 38 | 보안 취약점 4건(심각도 상) 수정 | mcp_db_manager.py, config.py, api.py, test_mcp_db_manager.py, test_config.py(신규), test_api.py | DONE | exec() 구문검증, MCP command 화이트리스트, 요구사항 파일 경로검증+1MB제한, tool 인자 서명검증; 전체 271개 통과 |
-| 39 | 보안 취약점 6건(심각도 중) 수정 | constants.py(신규), models.py, api.py, mcp_db_manager.py, gemini/claude/ollama_client.py, test_models.py(신규), test_api.py, test_mcp_db_manager.py | DONE | 필드 길이/개수 검증, 히스토리 200개 제한, HISTORY_MAX_CHARS 중앙화, func_names 1000개 제한, 잘림 경고 로그, 쿼리 추출 함수화; 전체 295개 통과 |
-| 40 | 보안 취약점 3건(심각도 하) 수정 | constants.py, graph_manager.py, agent_config_manager.py, mcp_db_manager.py, test_graph_manager.py, test_agent_config_manager.py | DONE | 키워드 SQL 중복 제거(_fetch_keywords), UTC 타임스탬프 통일(utcnow()), sync_skills 로깅 추가; 전체 303개 통과 |
-| 41 | PROJECT_ANALYSIS.md mcp_modules 불일치 수정 | PROJECT_ANALYSIS.md | DONE | 섹션 2/4.1/4.5/5/6/8/10/11 갱신 — mcp_modules/ 빈 디렉토리 반영, 삭제된 파일 목록 이력 표시, 보안 설계 현행화, 테스트 수 303개 반영 |
-| 42 | PROJECT_ANALYSIS.md 불일치 수정 + validate 자동검증 추가 | PROJECT_ANALYSIS.md, claude_tools/report_validator.py(신규), claude_tools/__main__.py | DONE | 7개 범주 불일치 수정(섹션 1~7), 4개 누락 모듈 기술 추가(4.8~4.18), 테스트 수 303→324, pytest-asyncio 추가; report_validator.py(신규) + validate 명령 추가 |
-| 43 | project02 개선 패턴 이식 (코드 품질 개선) | constants.py, models.py, api.py, config.py, requirements.txt, pytest.ini, gemini_client.py, test_api.py, test_models.py, PROJECT_ANALYSIS.md | DONE | Final[int] 타입, 신규 상수 4개, GeminiToolCall→ToolCall(alias 하위호환), DB init lifespan, 앱 제목, config lazy accessor, asyncio_mode=auto; 324개 통과 |
-
-> *#1~#38는 이전 작업으로 정리 완료 (최근 5개만 표시)*
+> DB 관리: `history/conversations.db` → `requirements` 테이블
+> 조회: `python -m claude_tools tracker requirements`
 
 ### 0.2 진행 중인 요구사항 (In Progress)
 
-| # | 요구사항 | 관련 파일 | 상태 | 비고 |
-|---|---------|-----------|------|------|
-| - | 현재 없음 | - | - | - |
+> DB 관리: `history/conversations.db` → `requirements` 테이블 (`status = 'IN_PROGRESS'`)
+> 조회: `python -m claude_tools tracker inprogress`
+> 상태 변경: `python -m claude_tools req move <번호> inprogress`
 
 ### 0.3 미구현 / 예정 요구사항 (Pending / Backlog)
 
-| # | 요구사항 | 관련 스펙 | 우선순위 | 비고 |
-|---|---------|-----------|----------|------|
-| - | 현재 없음 | - | - | - |
+> DB 관리: `history/conversations.db` → `requirements` 테이블 (`status = 'PENDING'`)
+> 조회: `python -m claude_tools tracker pending`
+> 상태 변경: `python -m claude_tools req move <번호> pending`
 
 ### 0.4 변경 이력 (Change Log)
 
-| 날짜 | 작업 내용 | 변경 파일 |
-|------|-----------|-----------|
-| 2026-02-26 | Ollama 프로바이더 추가(#37): test_ollama_client.py(신규, 18개 테스트), test_model_manager.py(ollama fixture+3개 테스트), main.py(model set 도움말), 전체 246개 통과 | test_ollama_client.py(신규), test_model_manager.py, main.py |
-| 2026-02-26 | 보안 취약점 4건 수정(#38): exec() ast 구문검증, MCP command 화이트리스트, 요구사항 파일 경로검증+1MB, tool 인자 서명검증; test_config.py(신규), 전체 271개 통과 | mcp_db_manager.py, config.py, api.py, test_config.py(신규), test_mcp_db_manager.py, test_api.py |
-| 2026-02-26 | 보안 취약점 6건 수정(#39): 필드 길이검증(models.py), 히스토리 200개 제한+_prune_history, HISTORY_MAX_CHARS 중앙화(constants.py), func_names 1000개 제한, 잘림 경고 로그, _extract_first_query 함수화; test_models.py(신규), 전체 295개 통과 | constants.py(신규), models.py, api.py, mcp_db_manager.py, gemini/claude/ollama_client.py, test_models.py(신규), test_api.py, test_mcp_db_manager.py |
-| 2026-02-26 | 보안 취약점 3건 수정(#40): _fetch_keywords() 헬퍼(SQL중복제거), utcnow() UTC통일(3개 파일), sync_skills 로깅 추가(added/updated/total); 전체 303개 통과 | constants.py, graph_manager.py, agent_config_manager.py, mcp_db_manager.py, test_graph_manager.py, test_agent_config_manager.py |
-| 2026-02-26 | PROJECT_ANALYSIS.md mcp_modules 불일치 수정(#41): 섹션 2/4.1/4.5/5/6/8/10/11 현행화, 삭제된 10개 파일 이력 표시, 보안 설계 현행화, 테스트 수 226→303 갱신 | PROJECT_ANALYSIS.md |
-| 2026-02-26 | PROJECT_ANALYSIS.md 불일치 수정+validate 추가(#42): 섹션 1(LLM 백엔드), 섹션 2(디렉토리+orchestrator 파일), 섹션 3(llm_client 라우팅), 섹션 4.3(히스토리 예산 기반), 4.4(web_router), 4.6(어댑터 구조), 4.8~4.18(누락 모듈 11개), 섹션 6(테스트 303→324, 파일 4개 추가), 섹션 7(pytest-asyncio); report_validator.py(신규) + validate 명령 | PROJECT_ANALYSIS.md, claude_tools/report_validator.py(신규), claude_tools/__main__.py |
-| 2026-02-27 | project02 개선 패턴 이식(#43): Final[int] 타입+4개 신규 상수(MAX_TOOL_RESULT_LENGTH 등), GeminiToolCall→ToolCall rename+alias, lifespan DB init 3개, 앱 제목, import json 모듈레벨, Optional[str], config lazy accessor, asyncio_mode=auto, requirements.txt 재구성(6개 패키지 추가) | constants.py, models.py, api.py, config.py, requirements.txt, pytest.ini, gemini_client.py, test_api.py, test_models.py, PROJECT_ANALYSIS.md |
-
-> *최근 5개만 표시, 이전 이력은 정리 완료 (#38 이전)*
+> DB 관리: `history/conversations.db` → `change_log` 테이블
+> 조회: `python -m claude_tools tracker changes`
 
 ---
 ---
@@ -105,7 +87,8 @@ test02/
 │   ├── project_scanner.py       # 프로젝트 구조/함수 스냅샷 생성
 │   ├── change_tracker.py        # 이전 스냅샷 대비 변경 감지
 │   ├── report_updater.py        # PROJECT_ANALYSIS.md 섹션 11,12 자동 갱신
-│   └── report_validator.py      # 섹션 2/6/7 자동 검증 (불일치 경고)
+│   ├── report_validator.py      # 섹션 2/6/7 자동 검증 (불일치 경고)
+│   └── project_tracker.py       # MD 정적 섹션 → SQLite DB 관리 (requirements/change_log/deleted_files/test_status)
 ├── venv/                        # Python 가상환경
 ├── system_prompts/              # 시스템 프롬프트 파일 (자동 생성)
 └── history/                     # SQLite DB (conversations.db) + JSON 마이그레이션 이력
@@ -266,20 +249,8 @@ test02/
 
 ### 5.1 이력 (삭제된 파일)
 
-아래 파일들은 #34 작업(2026-02-25)에서 DB 이전 후 삭제되었습니다.
-
-| 삭제된 모듈 | 레벨 | 비고 |
-|------------|------|------|
-| `code_execution_atomic.py` | Atomic | DB `mcp_functions` 테이블로 이전 |
-| `code_execution_composite.py` | Composite | 동일 |
-| `user_interaction_atomic.py` | Atomic | 동일 |
-| `user_interaction_composite.py` | Composite | 동일 |
-| `file_management.py` | Atomic | 동일 (이전에 YAML 스펙만 존재하다가 #29에서 구현됨) |
-| `file_content_operations.py` | Atomic | 동일 |
-| `file_attributes.py` | Atomic | 동일 |
-| `file_system_composite.py` | Composite | 동일 |
-| `git_version_control.py` | Composite | 동일 |
-| `web_network_atomic.py` | Atomic | 동일 |
+> DB 관리: `history/conversations.db` → `deleted_files` 테이블
+> 조회: `python -m claude_tools tracker deleted`
 
 ### 5.2 현재 도구 로드 경로
 
@@ -295,27 +266,9 @@ tool_registry._load_local_modules()
 
 ## 6. 테스트 현황
 
-> 마지막 확인: 2026-02-26 | **전체 324개 통과**
-
-| 테스트 파일 | 대상 모듈 | 비고 |
-|-------------|-----------|------|
-| `orchestrator/test_api.py` | api.py | FastAPI 엔드포인트, 경로 검증, 인자 검증, 히스토리 정리, 결과 잘림 경고 |
-| `orchestrator/test_config.py` | config.py | MCP 서버 command 화이트리스트 검증 |
-| `orchestrator/test_gemini_client.py` | gemini_client.py | 실행 계획/최종 답변/키워드/주제 분리/제목 생성 |
-| `orchestrator/test_graph_manager.py` | graph_manager.py | 대화/그룹/토픽/키워드 CRUD, UTC 타임스탬프 |
-| `orchestrator/test_agent_config_manager.py` | agent_config_manager.py | 시스템 프롬프트/스킬/매크로/워크플로우/페르소나 CRUD, 스킬 동기화 로깅 |
-| `orchestrator/test_mcp_db_manager.py` | mcp_db_manager.py | 함수 등록/버전/테스트/세션/사용 통계, 구문 검증, func_names 한도 |
-| `orchestrator/test_mcp_manager.py` | mcp_manager.py | MCP 서버 레지스트리 CRUD, 활성화/비활성화 |
-| `orchestrator/test_model_manager.py` | model_manager.py | 설정 I/O, 프로바이더 목록, 모델 fetch (Gemini/Claude/OpenAI/Grok/Ollama) |
-| `orchestrator/test_models.py` | models.py | Pydantic 필드 길이·개수 검증 |
-| `orchestrator/test_ollama_client.py` | ollama_client.py | 실행 계획/최종 답변/키워드/주제 분리/제목 생성 |
-| `orchestrator/test_issue_tracker.py` | issue_tracker.py | 이슈 캡처/조회/상태 변경 |
-| `orchestrator/test_test_registry.py` | test_registry.py | 테스트 파일 DB 저장/실행 |
-| `orchestrator/test_registry.py` | test_registry.py | 테스트 파일 스캔/파싱 기능 |
-| `orchestrator/test_tool_registry.py` | tool_registry.py | 로컬/MCP 도구 로드 및 조회 |
-| `orchestrator/test_web_router.py` | web_router.py | /api/v1 엔드포인트 |
-
-**테스트 실행**: `pytest` (pytest.ini: `pythonpath = .`)
+> DB 관리: `history/conversations.db` → `test_status` 테이블 (validate 실행 시 자동 갱신)
+> 조회: `python -m claude_tools tracker tests`
+> 실행: `pytest` (pytest.ini: `pythonpath = .`)
 
 ---
 
@@ -393,25 +346,21 @@ pytest
 
 ## 10. 알려진 이슈 및 개선 포인트
 
-| # | 이슈 내용 | 상태 | 해결일 | 비고 |
-|---|-----------|------|--------|------|
-| 1 | 스펙만 존재하는 모듈 6개 Python 구현체 없음 | 해결됨 | 2026-02-18 | #29: 6개 모듈 Python 구현 완료 |
-| 2 | mcp_modules/ 내 Python 파일 전체 삭제됨 (DB 마이그레이션 #34) | 정보 | 2026-02-25 | tool_registry.py는 DB 우선 로드, 파일 폴백 실패 시 ERROR 로그 (정상 동작). DB에 함수 등록 필요 |
-
-> **현재 오픈 이슈 없음.** 전체 324개 테스트 통과, Backlog 비어 있음.
+> DB 관리: `history/conversations.db` → `issues` 테이블 (orchestrator/issue_tracker.py)
+> 조회: `python -m claude_tools tracker issues`
 
 ---
 
 ## 11. 파일별 상세 카탈로그 (자동 생성)
 
-> 자동 생성 시각: 2026-02-27T08:09:15
-> Python 파일: 40개 | 함수: 317개 | 클래스: 96개 | 총 라인: 12338줄
+> 자동 생성 시각: 2026-02-28T20:09:07
+> Python 파일: 42개 | 함수: 354개 | 클래스: 97개 | 총 라인: 13869줄
 
 ### ./
 
-#### `PROJECT_ANALYSIS.md` (1782줄, 96,792B)
+#### `PROJECT_ANALYSIS.md` (1768줄, 93,624B)
 
-#### `main.py` (2124줄, 89,393B)
+#### `main.py` (2262줄, 96,347B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -494,7 +443,7 @@ pytest
 | `test_run` | `name: str` | `-` | 특정 테스트를 실행합니다. |
 | `test_run_all` | `` | `-` | 저장된 모든 테스트를 실행하고 요약을 출력합니다. |
 
-의존성: `asyncio`, `dotenv`, `httpx`, `json`, `orchestrator`, `os`, `pathlib`, `rich`, `shutil`, `socket`
+의존성: `asyncio`, `click`, `dotenv`, `httpx`, `json`, `orchestrator`, `os`, `pathlib`, `rich`, `shutil`
 
 #### `mcp_servers.json` (65줄, 1,862B)
 
@@ -510,14 +459,14 @@ pytest
 
 #### `__init__.py` (2줄, 128B)
 
-#### `__main__.py` (116줄, 4,278B)
+#### `__main__.py` (435줄, 17,512B)
 > claude_tools CLI 진입점  사용법:     python -m claude_tools scan              # 프로젝트 스캔 (스냅샷 생성)     python -m claude_tools changes           # 변경 사항 감지     python -m claude_tools update            # 분석 보고서
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `main` | `` | `-` | - |
 
-의존성: `change_tracker`, `json`, `os`, `project_scanner`, `report_updater`, `report_validator`, `sys`
+의존성: `change_tracker`, `json`, `os`, `project_scanner`, `project_tracker`, `report_updater`, `report_validator`, `sqlite3`, `sys`
 
 #### `change_tracker.py` (231줄, 7,824B)
 > change_tracker.py - 이전 스냅샷 대비 변경 사항 감지  이 스크립트의 출력만 읽으면 Claude가 "무엇이 변했는지"를 즉시 파악할 수 있습니다. 개별 파일을 읽을 필요가 없어 토큰 소모를 대폭 줄입니다.
@@ -541,6 +490,32 @@ pytest
 
 의존성: `ast`, `datetime`, `hashlib`, `json`, `os`, `pathlib`, `sys`, `typing`
 
+#### `project_tracker.py` (788줄, 35,144B)
+> project_tracker.py - PROJECT_ANALYSIS.md 정적 섹션 → SQLite DB 관리  관리 테이블:   requirements  — 요구사항 전체 (섹션 0.1/0.2/0.3 통합, status로 구분)                   status: 'DONE' | 'IN_PROGRESS' | 'PENDING'   change_l
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `get_db_path` | `` | `str` | 프로젝트 루트 기준 DB 경로를 반환합니다. |
+| `init_tables` | `db_path: Optional[str]` | `None` | 4개 테이블을 생성합니다 (이미 있으면 무시). requirements에 issue_id 컬럼 보장. |
+| `add_requirement` | `number: int, title: str, applied_files: str, st...` | `int` | 요구사항을 DB에 추가합니다. |
+| `update_requirement_status` | `number: int, new_status: str, note: str, applie...` | `bool` | 요구사항 상태를 변경합니다 (PENDING→IN_PROGRESS→DONE 등). |
+| `list_requirements` | `status: Optional[str], db_path: Optional[str]` | `List[Dict]` | 요구사항 목록을 반환합니다. |
+| `get_next_req_number` | `db_path: Optional[str]` | `int` | requirements 테이블의 현재 최대 number + 1을 반환합니다. |
+| `auto_create_from_issues` | `db_path: Optional[str], severity_filter: Option...` | `List[Dict]` | open 이슈를 스캔해 아직 요구사항이 없는 그룹마다 PENDING 요구사항을 자동 생성합니다. |
+| `auto_resolve_issues` | `db_path: Optional[str]` | `int` | DONE 처리된 이슈 기반 요구사항의 연결 이슈를 모두 resolved 처리합니다. |
+| `sync_issues` | `db_path: Optional[str], dry_run: bool` | `Dict` | 이슈 → 요구사항 동기화를 실행합니다 (create + resolve). |
+| `get_issue_detail` | `issue_id: int, db_path: Optional[str]` | `Optional[Dict]` | 단일 이슈의 전체 상세 정보를 반환합니다 (traceback, context 포함). |
+| `list_bug_requirements` | `db_path: Optional[str]` | `List[Dict]` | 이슈 기반(issue_id 있는) 요구사항 중 미완료 항목을 이슈 상세 포함하여 반환합니다. |
+| `add_change` | `date: str, description: str, changed_files: str...` | `int` | - |
+| `list_changes` | `limit: int, db_path: Optional[str]` | `List[Dict]` | - |
+| `add_deleted_file` | `module_name: str, level: str, note: str, delete...` | `int` | - |
+| `list_deleted_files` | `db_path: Optional[str]` | `List[Dict]` | - |
+| `upsert_test_status` | `test_file: str, target_module: str, note: str, ...` | `None` | - |
+| `list_test_status` | `db_path: Optional[str]` | `List[Dict]` | - |
+| `migrate_from_md` | `db_path: Optional[str], force: bool` | `None` | PROJECT_ANALYSIS.md 5개 섹션 데이터를 DB로 마이그레이션합니다 (1회성). |
+
+의존성: `contextlib`, `datetime`, `pathlib`, `sqlite3`, `typing`
+
 #### `report_updater.py` (183줄, 7,122B)
 > report_updater.py - PROJECT_ANALYSIS.md 자동 갱신  스냅샷과 변경 사항 데이터를 기반으로 분석 보고서의 특정 섹션을 자동 갱신합니다. Claude가 이 보고서만 읽으면 전체 프로젝트를 파악할 수 있도록 합니다.
 
@@ -550,7 +525,7 @@ pytest
 
 의존성: `datetime`, `json`, `os`, `pathlib`, `project_scanner`, `re`, `sys`, `typing`
 
-#### `report_validator.py` (280줄, 11,138B)
+#### `report_validator.py` (324줄, 12,802B)
 > report_validator.py - PROJECT_ANALYSIS.md 자동 검증  섹션 2(디렉토리), 섹션 6(테스트), 섹션 7(의존성)을 실제 파일/스냅샷과 비교하여 불일치를 경고합니다.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -562,11 +537,11 @@ pytest
 
 **class `ValidationResult`** (line 24)
 
-의존성: `dataclasses`, `json`, `pathlib`, `re`, `subprocess`, `sys`, `typing`
+의존성: `dataclasses`, `json`, `pathlib`, `project_tracker`, `re`, `subprocess`, `sys`, `typing`
 
 ### history/
 
-#### `conversations.db` (?줄, 724,992B)
+#### `conversations.db` (?줄, 815,104B)
 
 ### orchestrator/
 
@@ -611,7 +586,7 @@ pytest
 
 의존성: `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `tool_registry`, `typing`
 
-#### `api.py` (440줄, 17,634B)
+#### `api.py` (472줄, 18,984B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -621,7 +596,7 @@ pytest
 
 의존성: `constants`, `contextlib`, `datetime`, `fastapi`, `inspect`, `llm_client`, `logging`, `models`, `os`, `re`
 
-#### `claude_client.py` (344줄, 12,452B)
+#### `claude_client.py` (364줄, 13,143B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -656,7 +631,7 @@ pytest
 
 의존성: `datetime`, `typing`
 
-#### `gemini_client.py` (336줄, 11,423B)
+#### `gemini_client.py` (365줄, 12,511B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -666,7 +641,7 @@ pytest
 | `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | Gemini로 주제 전환 지점 감지. 실패 시 None 반환. |
 | `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
 
-의존성: `constants`, `dotenv`, `google`, `json`, `logging`, `models`, `os`, `tool_registry`, `typing`
+의존성: `constants`, `dotenv`, `google`, `json`, `logging`, `model_manager`, `models`, `os`, `tool_registry`, `typing`
 
 #### `graph_manager.py` (854줄, 30,422B)
 > SQLite 기반 대화 지식 그래프 관리 모듈.
@@ -786,7 +761,7 @@ pytest
 
 의존성: `contextlib`, `datetime`, `httpx`, `json`, `logging`, `mcp`, `os`, `subprocess`, `typing`
 
-#### `model_manager.py` (273줄, 9,369B)
+#### `model_manager.py` (273줄, 9,381B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -804,7 +779,7 @@ pytest
 
 의존성: `google`, `httpx`, `json`, `logging`, `os`, `typing`
 
-#### `models.py` (72줄, 2,972B)
+#### `models.py` (73줄, 3,080B)
 
 **class `AgentRequest`** (line 9)
 > CLI가 서버로 보내는 요청 모델
@@ -829,7 +804,7 @@ pytest
 
 의존성: `json`, `pydantic`, `typing`
 
-#### `ollama_client.py` (336줄, 12,327B)
+#### `ollama_client.py` (348줄, 12,687B)
 > Ollama 로컬 LLM 클라이언트.  8GB RAM 환경 기준 모델:   HIGH    : qwen2.5-coder:7b  (~4.5GB, 코딩 고성능)   STANDARD: qwen2.5-coder:3b  (~2.0GB, 코딩 경량/균형)  Gemini/Claude 클라이언트와 동일한 함수 인터페이스를 제공합니다.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1020,7 +995,7 @@ pytest
 
 의존성: `config`, `json`, `logging`, `pytest`
 
-#### `test_gemini_client.py` (95줄, 3,685B)
+#### `test_gemini_client.py` (115줄, 4,829B)
 > orchestrator/gemini_client.py에 대한 단위 테스트
 
 **class `TestTruncateHistory`** (line 13)
@@ -1039,22 +1014,24 @@ pytest
 |--------|------|------|
 | `test_high_preference` | `self` | model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환 |
 | `test_standard_preference` | `self` | model_preference='standard'이면 STANDARD_MODEL_NAME 반환 |
-| `test_auto_with_high_default` | `self` | auto + default_type='high'이면 HIGH_PERF_MODEL_NAME |
-| `test_auto_with_standard_default` | `self` | auto + default_type='standard'이면 STANDARD_MODEL_NAME |
+| `test_auto_uses_config_active_model` | `self` | auto 모드는 model_config.json의 active_model 우선 반환 |
+| `test_auto_with_high_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='high'이면 HIGH_PERF_MODEL_NAME 폴백 |
+| `test_auto_with_standard_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='standard'이면 STANDARD_MODEL_NAME 폴백 |
+| `test_auto_fallback_on_exception` | `self` | auto + model_manager 오류 시 default_type 폴백 |
 
-**class `TestGenerateExecutionPlan`** (line 64)
-
-| 메서드 | 인자 | 설명 |
-|--------|------|------|
-| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
-
-**class `TestGenerateFinalAnswer`** (line 73)
+**class `TestGenerateExecutionPlan`** (line 84)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
 
-**class `TestGenerateTitleForConversation`** (line 82)
+**class `TestGenerateFinalAnswer`** (line 93)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
+
+**class `TestGenerateTitleForConversation`** (line 102)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1420,7 +1397,7 @@ pytest
 
 의존성: `json`, `os`, `pytest`, `tempfile`, `unittest`
 
-#### `test_model_manager.py` (303줄, 12,298B)
+#### `test_model_manager.py` (303줄, 12,302B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1708,6 +1685,20 @@ pytest
 
 의존성: `api`, `httpx`, `pytest`, `unittest`
 
+#### `token_tracker.py` (128줄, 4,877B)
+> 요청별 LLM 토큰 사용량 추적.  ContextVar 기반으로 async 요청 단위로 격리됩니다. 각 LLM 클라이언트가 record()를 호출하고, api.py가 get_accumulated()로 수집합니다.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `calculate_cost` | `model: str, input_tokens: int, output_tokens: int` | `float` | 모델명 + 토큰 수로 USD 비용을 계산합니다. 미등록 모델은 0.0 반환. |
+| `begin_tracking` | `` | `None` | 현재 async 컨텍스트에서 토큰 추적을 시작합니다 (요청 핸들러 진입 시 호출). |
+| `record` | `provider: str, model: str, input_tokens: int, o...` | `None` | 토큰 사용 1건을 현재 컨텍스트에 기록합니다. begin_tracking() 이후에만 동작합니다. |
+| `get_accumulated` | `` | `Optional[dict]` | 수집된 토큰 사용량을 집계하여 dict로 반환합니다. 기록이 없으면 None. |
+
+**class `_Entry`** (line 67)
+
+의존성: `contextvars`, `dataclasses`, `typing`
+
 #### `tool_registry.py` (250줄, 9,222B)
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1775,10 +1766,13 @@ pytest
 
 ```
   main.py → orchestrator.agent_config_manager, orchestrator.graph_manager, orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.history_manager.split_conversation, orchestrator.issue_tracker, orchestrator.mcp_db_manager, orchestrator.mcp_manager, orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model, orchestrator.test_registry, orchestrator.tool_registry.TOOL_DESCRIPTIONS
-  api.py → .agent_config_manager, .graph_manager, .history_manager, .issue_tracker, .mcp_db_manager, .tool_registry
+  api.py → .agent_config_manager, .graph_manager, .history_manager, .issue_tracker, .mcp_db_manager, .token_tracker, .tool_registry
+  claude_client.py → .token_tracker
+  gemini_client.py → .token_tracker
   history_manager.py → .graph_manager
   llm_client.py → .claude_client, .gemini_client, .ollama_client
   mcp_manager.py → .config
+  ollama_client.py → .token_tracker
   test_agent_config_manager.py → .agent_config_manager, orchestrator.agent_config_manager
   test_config.py → .config
   test_gemini_client.py → .gemini_client

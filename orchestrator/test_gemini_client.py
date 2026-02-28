@@ -50,15 +50,35 @@ class TestGetModelName:
         result = gc._get_model_name("standard")
         assert result == gc.STANDARD_MODEL_NAME
 
-    def test_auto_with_high_default(self):
-        """auto + default_type='high'이면 HIGH_PERF_MODEL_NAME"""
-        result = gc._get_model_name("auto", default_type="high")
-        assert result == gc.HIGH_PERF_MODEL_NAME
+    def test_auto_uses_config_active_model(self):
+        """auto 모드는 model_config.json의 active_model 우선 반환"""
+        with patch("orchestrator.model_manager.load_config", return_value={
+            "active_provider": "gemini", "active_model": "gemini-test-model"
+        }):
+            result = gc._get_model_name("auto", default_type="high")
+            assert result == "gemini-test-model"
 
-    def test_auto_with_standard_default(self):
-        """auto + default_type='standard'이면 STANDARD_MODEL_NAME"""
-        result = gc._get_model_name("auto", default_type="standard")
-        assert result == gc.STANDARD_MODEL_NAME
+    def test_auto_with_high_default_fallback(self):
+        """auto + active_model 비어있을 때 default_type='high'이면 HIGH_PERF_MODEL_NAME 폴백"""
+        with patch("orchestrator.model_manager.load_config", return_value={
+            "active_provider": "gemini", "active_model": ""
+        }):
+            result = gc._get_model_name("auto", default_type="high")
+            assert result == gc.HIGH_PERF_MODEL_NAME
+
+    def test_auto_with_standard_default_fallback(self):
+        """auto + active_model 비어있을 때 default_type='standard'이면 STANDARD_MODEL_NAME 폴백"""
+        with patch("orchestrator.model_manager.load_config", return_value={
+            "active_provider": "gemini", "active_model": ""
+        }):
+            result = gc._get_model_name("auto", default_type="standard")
+            assert result == gc.STANDARD_MODEL_NAME
+
+    def test_auto_fallback_on_exception(self):
+        """auto + model_manager 오류 시 default_type 폴백"""
+        with patch("orchestrator.model_manager.load_config", side_effect=Exception("fail")):
+            result = gc._get_model_name("auto", default_type="high")
+            assert result == gc.HIGH_PERF_MODEL_NAME
 
 
 class TestGenerateExecutionPlan:

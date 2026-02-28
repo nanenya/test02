@@ -12,6 +12,7 @@ from orchestrator.mcp_db_manager import (
     MCP_CACHE_DIR,
     _extract_preamble,
     _extract_test_map,
+    _validate_code_syntax,
     activate_function,
     end_session,
     generate_temp_module,
@@ -21,6 +22,7 @@ from orchestrator.mcp_db_manager import (
     import_from_file,
     init_db,
     list_functions,
+    load_module_in_memory,
     log_usage,
     register_function,
     run_function_tests,
@@ -28,6 +30,7 @@ from orchestrator.mcp_db_manager import (
     set_module_preamble,
     start_session,
 )
+from orchestrator.constants import MAX_FUNC_NAMES_PER_SESSION
 import ast
 
 
@@ -510,3 +513,79 @@ class TestActivateFunction:
         register_function("only_v1", "g", "def only_v1(): pass", db_path=db)
         with pytest.raises(ValueError, match="찾을 수 없습니다"):
             activate_function("only_v1", 99, db_path=db)
+
+
+# ── TestValidateCodeSyntax ────────────────────────────────────────
+
+class TestValidateCodeSyntax:
+    def test_valid_code_passes(self):
+        _validate_code_syntax("def foo():\n    return 1")
+
+    def test_invalid_syntax_raises_value_error(self):
+        with pytest.raises(ValueError, match="코드 구문 오류"):
+            _validate_code_syntax("def foo(:\n    pass")
+
+    def test_label_included_in_error_message(self):
+        with pytest.raises(ValueError, match="my_label"):
+            _validate_code_syntax("def broken(:\n    pass", label="my_label")
+
+    def test_empty_code_passes(self):
+        _validate_code_syntax("")
+
+    def test_preamble_validated_before_exec(self, db):
+        """구문 오류가 있는 preamble이 있으면 load_module_in_memory가 ValueError를 발생시킨다."""
+        # 유효한 함수를 먼저 등록해 그룹을 생성
+        register_function("fn_ok", "bad_preamble", "def fn_ok(): return 1", db_path=db)
+        # set_module_preamble로 구문 오류가 있는 preamble 설정 (검증은 load 시점에만 수행)
+        set_module_preamble("bad_preamble", "def broken(:\n    pass", db_path=db)
+        with pytest.raises(ValueError, match="코드 구문 오류"):
+            load_module_in_memory("bad_preamble", db_path=db)
+
+    def test_function_code_validated_before_exec(self, db):
+        """구문 오류가 있는 함수 코드가 있으면 load_module_in_memory가 ValueError를 발생시킨다."""
+        from orchestrator.graph_manager import get_db
+        # 유효한 코드로 함수 등록
+        register_function("bad_fn", "bad_code_group", "def bad_fn(): return 1", db_path=db)
+        # 구문 오류가 있는 코드로 업데이트
+        with get_db(db) as conn:
+            conn.execute(
+                "UPDATE mcp_functions SET code = ? WHERE func_name = ? AND is_active = 1",
+                ("def bad_fn(:\n    pass", "bad_fn"),
+            )
+        with pytest.raises(ValueError, match="코드 구문 오류"):
+            load_module_in_memory("bad_code_group", db_path=db)
+
+
+# ── TestFuncNamesLimit ────────────────────────────────────────────
+
+class TestFuncNamesLimit:
+    def test_func_names_does_not_exceed_limit(self, db, monkeypatch):
+        """func_names 리스트가 MAX_FUNC_NAMES_PER_SESSION을 초과하지 않는다."""
+        import orchestrator.mcp_db_manager as mgr
+        monkeypatch.setattr(mgr, "MAX_FUNC_NAMES_PER_SESSION", 3)
+
+        sid = start_session(db_path=db)
+        for i in range(5):
+            log_usage(f"func_{i}", success=True, session_id=sid, db_path=db)
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute(
+            "SELECT func_names FROM mcp_session_log WHERE id = ?", (sid,)
+        ).fetchone()
+        conn.close()
+        names = json.loads(row[0])
+        # 한도 3개를 초과하지 않아야 함
+        assert len(names) <= 3
+
+    def test_func_names_warns_at_limit(self, db, monkeypatch, caplog):
+        """한도 초과 시 WARNING 로그가 기록된다."""
+        import orchestrator.mcp_db_manager as mgr
+        monkeypatch.setattr(mgr, "MAX_FUNC_NAMES_PER_SESSION", 2)
+
+        sid = start_session(db_path=db)
+        import logging
+        with caplog.at_level(logging.WARNING):
+            for i in range(3):
+                log_usage(f"func_{i}", success=True, session_id=sid, db_path=db)
+
+        assert any("한도에 도달" in r.message for r in caplog.records)

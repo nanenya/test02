@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from .models import ExecutionGroup
 from .tool_registry import get_filtered_tool_descriptions
+from .constants import HISTORY_MAX_CHARS
 
 load_dotenv()
 
@@ -32,7 +33,7 @@ _TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
 ModelPreference = Literal["auto", "standard", "high"]
 
-DEFAULT_HISTORY_MAX_CHARS = 6000
+DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
 
 
 def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
@@ -87,6 +88,18 @@ async def _ollama_chat(
         resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
+
+    # 토큰 사용량 기록 (로컬/무료, 비용 없음)
+    try:
+        from . import token_tracker
+        token_tracker.record(
+            provider="ollama",
+            model=model,
+            input_tokens=data.get("prompt_eval_count", 0) or 0,
+            output_tokens=data.get("eval_count", 0) or 0,
+        )
+    except Exception:
+        pass
 
     return data["message"]["content"]
 
