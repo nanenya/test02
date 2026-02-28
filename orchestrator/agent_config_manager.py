@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from .constants import utcnow
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -91,7 +92,7 @@ def create_system_prompt(
     db_path: Path = DB_PATH,
 ) -> int:
     """시스템 프롬프트 생성. is_default=True면 기존 기본값 해제 후 설정."""
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         if is_default:
             conn.execute("UPDATE system_prompts SET is_default=0 WHERE is_default=1")
@@ -136,7 +137,7 @@ def update_system_prompt(
     is_default: Optional[bool] = None,
     db_path: Path = DB_PATH,
 ) -> bool:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         existing = conn.execute(
             "SELECT id FROM system_prompts WHERE name=?", (name,)
@@ -189,7 +190,7 @@ def migrate_prompts_from_files(
             continue
 
         is_default = name == "default"
-        now = datetime.now().isoformat()
+        now = utcnow()
         with get_db(db_path) as conn:
             existing = conn.execute(
                 "SELECT id FROM system_prompts WHERE name=?", (name,)
@@ -218,8 +219,9 @@ def sync_skills_from_registry(db_path: Path = DB_PATH) -> int:
 
     _load_local_modules()
 
-    now = datetime.now().isoformat()
+    now = utcnow()
     added = 0
+    updated = 0
 
     for tool_name, description in TOOL_DESCRIPTIONS.items():
         with get_db(db_path) as conn:
@@ -231,6 +233,7 @@ def sync_skills_from_registry(db_path: Path = DB_PATH) -> int:
                     "UPDATE skills SET description=?, synced_at=? WHERE name=?",
                     (description, now, tool_name),
                 )
+                updated += 1
             else:
                 conn.execute(
                     """
@@ -241,6 +244,11 @@ def sync_skills_from_registry(db_path: Path = DB_PATH) -> int:
                 )
                 added += 1
 
+    total = len(TOOL_DESCRIPTIONS)
+    logging.info(
+        f"스킬 동기화 완료: 신규 {added}개 추가, 기존 {updated}개 갱신 "
+        f"(전체 {total}개 처리)"
+    )
     return added
 
 
@@ -283,7 +291,7 @@ def create_macro(
     """스킬 매크로 생성. variables 미제공 시 {{var}} 패턴으로 자동 추출."""
     if variables is None:
         variables = re.findall(r'\{\{(\w+)\}\}', template)
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         cur = conn.execute(
             """
@@ -323,7 +331,7 @@ def update_macro(
     variables: Optional[List[str]] = None,
     db_path: Path = DB_PATH,
 ) -> bool:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         existing = conn.execute(
             "SELECT id, template FROM skill_macros WHERE name=?", (name,)
@@ -380,7 +388,7 @@ def create_workflow(
     description: str = "",
     db_path: Path = DB_PATH,
 ) -> int:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         cur = conn.execute(
             """
@@ -419,7 +427,7 @@ def update_workflow(
     description: Optional[str] = None,
     db_path: Path = DB_PATH,
 ) -> bool:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         existing = conn.execute(
             "SELECT id FROM workflows WHERE name=?", (name,)
@@ -460,7 +468,7 @@ def create_persona(
     is_default: bool = False,
     db_path: Path = DB_PATH,
 ) -> int:
-    now = datetime.now().isoformat()
+    now = utcnow()
     if allowed_skills is None:
         allowed_skills = []
     if keywords is None:
@@ -523,7 +531,7 @@ def update_persona(
     is_default: Optional[bool] = None,
     db_path: Path = DB_PATH,
 ) -> bool:
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         existing = conn.execute(
             "SELECT id FROM personas WHERE name=?", (name,)

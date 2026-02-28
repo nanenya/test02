@@ -22,13 +22,28 @@ else:
     logging.warning("GEMINI_API_KEY 환경변수가 설정되지 않았습니다. Gemini API 호출 시 오류가 발생합니다.")
     client = None
 
-HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-2.0-flash")
-STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite")
+HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-2.0-flash-001")
+STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite-001")
 
 ModelPreference = Literal["auto", "standard", "high"]
 
 
 DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
+
+
+def _record_usage(response, model_name: str) -> None:
+    """Gemini 응답의 usage_metadata를 token_tracker에 기록합니다. 실패는 무시."""
+    try:
+        from . import token_tracker
+        um = response.usage_metadata
+        token_tracker.record(
+            provider="gemini",
+            model=model_name,
+            input_tokens=getattr(um, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+        )
+    except Exception:
+        pass
 
 
 def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
@@ -67,6 +82,15 @@ def _get_model_name(
         return HIGH_PERF_MODEL_NAME
     if model_preference == "standard":
         return STANDARD_MODEL_NAME
+    # "auto": model_config.json에 설정된 활성 모델 우선 사용
+    try:
+        from .model_manager import load_config, get_active_model
+        _, active_model = get_active_model(load_config())
+        if active_model:
+            return active_model
+    except Exception:
+        pass
+    # 폴백: default_type에 따라 상수 사용
     if default_type == "high":
         return HIGH_PERF_MODEL_NAME
     return STANDARD_MODEL_NAME
@@ -151,6 +175,7 @@ async def generate_execution_plan(
             contents=prompt,
             config=JSON_CONFIG,
         )
+        _record_usage(response, model_name)
         parsed_json = json.loads(response.text)
 
         if not isinstance(parsed_json, list):
@@ -200,6 +225,7 @@ async def generate_final_answer(
             model=model_name,
             contents=summary_prompt,
         )
+        _record_usage(response, model_name)
 
         if not response.text:
             raise ValueError("모델이 빈 응답을 반환했습니다 (내용 필터링 가능성).")
@@ -245,6 +271,7 @@ JSON 배열로만 응답하세요. 예: ["FastAPI", "SQLite", "ReAct", "Python"]
             contents=prompt,
             config=JSON_CONFIG,
         )
+        _record_usage(response, model_name)
         parsed = json.loads(response.text)
         if isinstance(parsed, list):
             return [str(k) for k in parsed if isinstance(k, str)]
@@ -290,6 +317,7 @@ JSON 형식으로만 응답하세요:
             contents=prompt,
             config=JSON_CONFIG,
         )
+        _record_usage(response, model_name)
         parsed = json.loads(response.text)
         if isinstance(parsed, dict) and "detected" in parsed:
             return parsed
@@ -327,6 +355,7 @@ async def generate_title_for_conversation(
             model=model_name,
             contents=summary_prompt,
         )
+        _record_usage(response, model_name)
 
         if not response.text:
             return "요약_실패"

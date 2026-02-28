@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .graph_manager import DB_PATH, get_db
+from .constants import MAX_FUNC_NAMES_PER_SESSION, utcnow
 
 _BASE_DIR = Path(__file__).parent.parent
 MCP_CACHE_DIR = _BASE_DIR / "mcp_cache"
@@ -110,7 +111,7 @@ def register_function(
     테스트 코드가 있으면 자동 실행 후 통과 시 활성화합니다.
     테스트 코드가 없으면 즉시 활성화합니다.
     """
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         row = conn.execute(
             "SELECT MAX(version) FROM mcp_functions WHERE func_name = ?",
@@ -152,7 +153,7 @@ def register_function(
 
 def _activate_function(func_name: str, version: int, db_path=DB_PATH) -> None:
     """특정 버전을 활성화합니다 (동일 func_name의 기존 active는 모두 비활성화)."""
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             "UPDATE mcp_functions SET is_active = 0 WHERE func_name = ?",
@@ -275,6 +276,50 @@ def generate_temp_module(module_group: str, db_path=DB_PATH) -> Path:
     return cache_file
 
 
+# ── 인메모리 로드 ─────────────────────────────────────────────────
+
+def _validate_code_syntax(code: str, label: str = "") -> None:
+    """코드 구문 유효성 검사. SyntaxError 발생 시 ValueError를 발생시킵니다."""
+    try:
+        ast.parse(code)
+    except SyntaxError as e:
+        suffix = f" ({label})" if label else ""
+        raise ValueError(f"코드 구문 오류{suffix}: {e}") from e
+
+
+def load_module_in_memory(module_group: str, db_path=DB_PATH) -> dict:
+    """DB 활성 함수들을 exec()으로 메모리에 로드. {func_name: callable} 반환."""
+    with get_db(db_path) as conn:
+        ctx_row = conn.execute(
+            "SELECT preamble_code FROM mcp_module_contexts WHERE module_group = ?",
+            (module_group,),
+        ).fetchone()
+        preamble = ctx_row[0] if ctx_row else ""
+        funcs = conn.execute(
+            "SELECT func_name, code FROM mcp_functions "
+            "WHERE module_group = ? AND is_active = 1 ORDER BY func_name",
+            (module_group,),
+        ).fetchall()
+
+    if not funcs:
+        return {}
+
+    parts = []
+    if preamble:
+        _validate_code_syntax(preamble, "preamble")
+        parts.append(preamble)
+    for func_name, code in funcs:
+        _validate_code_syntax(code, func_name)
+        parts.append(code)
+
+    namespace: dict = {}
+    exec("\n\n".join(parts), namespace)  # noqa: S102
+
+    target_names = {row[0] for row in funcs}
+    return {k: v for k, v in namespace.items()
+            if callable(v) and k in target_names}
+
+
 # ── 조회 ──────────────────────────────────────────────────────────
 
 def get_active_function(func_name: str, db_path=DB_PATH) -> Optional[Dict]:
@@ -325,7 +370,7 @@ def start_session(
 ) -> str:
     """실행 세션을 시작하고 session_id(UUID)를 반환합니다."""
     session_id = str(uuid.uuid4())
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             "INSERT INTO mcp_session_log "
@@ -342,7 +387,7 @@ def end_session(
     db_path=DB_PATH,
 ) -> None:
     """실행 세션을 종료합니다."""
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             "UPDATE mcp_session_log SET ended_at = ?, overall_success = ? WHERE id = ?",
@@ -360,7 +405,7 @@ def log_usage(
     db_path=DB_PATH,
 ) -> None:
     """함수 실행 로그를 기록합니다."""
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         row = conn.execute(
             "SELECT version, module_group FROM mcp_functions "
@@ -389,7 +434,13 @@ def log_usage(
             if sess_row:
                 func_names = json.loads(sess_row[0])
                 if func_name not in func_names:
-                    func_names.append(func_name)
+                    if len(func_names) >= MAX_FUNC_NAMES_PER_SESSION:
+                        logging.warning(
+                            f"세션 '{session_id}'의 func_names가 {MAX_FUNC_NAMES_PER_SESSION}개 "
+                            f"한도에 도달했습니다. '{func_name}'을 추가하지 않습니다."
+                        )
+                    else:
+                        func_names.append(func_name)
                 conn.execute(
                     "UPDATE mcp_session_log SET func_names = ? WHERE id = ?",
                     (json.dumps(func_names), session_id),
@@ -476,7 +527,7 @@ def import_from_file(
         return {"imported_functions": 0, "failed": [f"SyntaxError: {e}"]}
 
     preamble = _extract_preamble(source, tree)
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             """INSERT OR REPLACE INTO mcp_module_contexts
@@ -658,7 +709,7 @@ def set_module_preamble(
     db_path=DB_PATH,
 ) -> None:
     """모듈 그룹의 preamble 코드를 직접 설정합니다."""
-    now = datetime.now().isoformat()
+    now = utcnow()
     with get_db(db_path) as conn:
         conn.execute(
             """INSERT OR REPLACE INTO mcp_module_contexts

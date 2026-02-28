@@ -70,3 +70,4 @@ class AgentResponse(BaseModel):
     message: str
     execution_group: Optional[ExecutionGroup] = None  # 다음 1개 그룹 확인용
     topic_split_info: Optional[Dict[str, Any]] = None  # 주제 분리 감지 결과
+    token_usage: Optional[Dict[str, Any]] = None  # LLM 토큰 사용량 (provider/model/input/output/cost)

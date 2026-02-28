@@ -8,6 +8,7 @@ import uuid
 import pytest
 
 from orchestrator.graph_manager import (
+    _fetch_keywords,
     assign_conversation_to_group,
     assign_conversation_to_topic,
     assign_keywords_to_conversation,
@@ -388,3 +389,79 @@ class TestDetectTopicSplit:
 
         result = await detect_topic_split(["msg1"])
         assert result is None
+
+
+# ── TestFetchKeywordsHelper ───────────────────────────────────────
+
+class TestFetchKeywordsHelper:
+    def test_returns_keywords(self, db):
+        convo_id = str(uuid.uuid4())
+        create_conversation(convo_id, db_path=db)
+        assign_keywords_to_conversation(convo_id, ["python", "fastapi"], db_path=db)
+
+        from orchestrator.graph_manager import get_db
+        with get_db(db) as conn:
+            keywords = _fetch_keywords(conn, convo_id)
+        assert "python" in keywords
+        assert "fastapi" in keywords
+
+    def test_returns_empty_for_no_keywords(self, db):
+        convo_id = str(uuid.uuid4())
+        create_conversation(convo_id, db_path=db)
+
+        from orchestrator.graph_manager import get_db
+        with get_db(db) as conn:
+            keywords = _fetch_keywords(conn, convo_id)
+        assert keywords == []
+
+    def test_load_conversation_uses_helper(self, db):
+        """load_conversation이 _fetch_keywords를 통해 키워드를 올바르게 반환한다."""
+        convo_id = str(uuid.uuid4())
+        save_conversation(convo_id, ["요청"], "타이틀", db_path=db)
+        assign_keywords_to_conversation(convo_id, ["sqlite"], db_path=db)
+
+        data = load_conversation(convo_id, db_path=db)
+        assert "sqlite" in data["keywords"]
+
+    def test_list_conversations_uses_helper(self, db):
+        """list_conversations가 _fetch_keywords를 통해 키워드를 올바르게 반환한다."""
+        convo_id = str(uuid.uuid4())
+        save_conversation(convo_id, [], "제목", db_path=db)
+        assign_keywords_to_conversation(convo_id, ["react"], db_path=db)
+
+        rows = list_conversations(db_path=db)
+        found = next((r for r in rows if r["id"] == convo_id), None)
+        assert found is not None
+        assert "react" in found["keywords"]
+
+
+# ── TestUtcTimestamps ─────────────────────────────────────────────
+
+class TestUtcTimestamps:
+    def test_create_conversation_uses_utc(self, db):
+        """create_conversation이 UTC 타임스탬프를 저장한다."""
+        import sqlite3
+        convo_id = str(uuid.uuid4())
+        create_conversation(convo_id, db_path=db)
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute(
+            "SELECT created_at FROM conversations WHERE id=?", (convo_id,)
+        ).fetchone()
+        conn.close()
+        ts = row[0]
+        # UTC 형식: YYYY-MM-DDTHH:MM:SS (19자)
+        assert len(ts) == 19
+        assert "T" in ts
+
+    def test_save_conversation_uses_utc(self, db):
+        convo_id = str(uuid.uuid4())
+        save_conversation(convo_id, [], "제목", db_path=db)
+
+        import sqlite3
+        conn = sqlite3.connect(str(db))
+        row = conn.execute(
+            "SELECT last_updated FROM conversations WHERE id=?", (convo_id,)
+        ).fetchone()
+        conn.close()
+        assert len(row[0]) == 19

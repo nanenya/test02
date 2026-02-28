@@ -9,6 +9,7 @@ import logging
 from dotenv import load_dotenv
 from .tool_registry import get_filtered_tool_descriptions
 from .models import ExecutionGroup
+from .constants import HISTORY_MAX_CHARS
 from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
@@ -22,7 +23,7 @@ STANDARD_MODEL_NAME = os.getenv("CLAUDE_STANDARD_MODEL", "claude-haiku-4-5-20251
 
 ModelPreference = Literal["auto", "standard", "high"]
 
-DEFAULT_HISTORY_MAX_CHARS = 6000
+DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
 
 
 def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
@@ -94,6 +95,26 @@ async def _call_claude(
         )
         resp.raise_for_status()
         data = resp.json()
+
+    # 토큰 사용량 기록
+    try:
+        from . import token_tracker
+        _usage = data.get("usage", {})
+        def _to_int(v):
+            try:
+                return int(v)
+            except Exception:
+                return None
+        token_tracker.record(
+            provider="claude",
+            model=model,
+            input_tokens=_usage.get("input_tokens", 0) or 0,
+            output_tokens=_usage.get("output_tokens", 0) or 0,
+            rate_limit_limit=_to_int(resp.headers.get("anthropic-ratelimit-tokens-limit")),
+            rate_limit_remaining=_to_int(resp.headers.get("anthropic-ratelimit-tokens-remaining")),
+        )
+    except Exception:
+        pass
 
     content_blocks = data.get("content", [])
     if not content_blocks:

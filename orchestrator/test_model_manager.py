@@ -40,6 +40,15 @@ def tmp_config(tmp_path):
                 "api_key_env": "XAI_API_KEY",
                 "default_model": "",
             },
+            "ollama": {
+                "enabled": True,
+                "api_key_env": "",
+                "base_url_env": "OLLAMA_BASE_URL",
+                "default_base_url": "http://localhost:11434",
+                "default_model": "qwen2.5-coder:3b",
+                "high_model": "qwen2.5-coder:7b",
+                "standard_model": "qwen2.5-coder:3b",
+            },
         },
     }
     with open(config_path, "w", encoding="utf-8") as f:
@@ -58,7 +67,7 @@ class TestConfigIO:
         missing_path = str(tmp_path / "nonexistent.json")
         config = model_manager.load_config(missing_path)
         assert config["active_provider"] == "gemini"
-        assert config["active_model"] == "gemini-2.0-flash"
+        assert config["active_model"] == "gemini-2.0-flash-001"
 
     def test_save_and_reload(self, tmp_path):
         config_path = str(tmp_path / "test_save.json")
@@ -113,7 +122,16 @@ class TestListProviders:
         with patch.dict(os.environ, env_clean, clear=False):
             providers = model_manager.list_providers(config)
             for p in providers:
-                assert p["has_api_key"] is False
+                if p["name"] != "ollama":  # ollama는 API 키 불필요
+                    assert p["has_api_key"] is False
+
+    def test_list_providers_ollama_no_api_key_required(self, tmp_config):
+        config = model_manager.load_config(tmp_config)
+        providers = model_manager.list_providers(config)
+        ollama = next(p for p in providers if p["name"] == "ollama")
+        assert ollama["has_api_key"] is True
+        assert ollama["api_key_env"] == ""
+        assert "base_url" in ollama
 
 
 class TestFetchModels:
@@ -212,6 +230,32 @@ class TestFetchModels:
 
         assert len(models) == 1
         assert models[0]["id"] == "grok-2"
+
+    @pytest.mark.asyncio
+    async def test_fetch_models_ollama_mock(self, tmp_config):
+        config = model_manager.load_config(tmp_config)
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "models": [
+                {"name": "qwen2.5-coder:7b", "size": 4718592000},
+                {"name": "qwen2.5-coder:3b", "size": 2097152000},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            models = await model_manager.fetch_models_ollama(config)
+
+        assert len(models) == 2
+        assert models[0]["id"] == "qwen2.5-coder:7b"
+        assert "MB" in models[0]["description"]
 
     @pytest.mark.asyncio
     async def test_fetch_models_dispatcher(self, tmp_config):

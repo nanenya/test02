@@ -14,13 +14,13 @@ _CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model_c
 _DEFAULT_CONFIG = {
     "version": "1.0",
     "active_provider": "gemini",
-    "active_model": "gemini-2.0-flash",
+    "active_model": "gemini-2.0-flash-001",
     "providers": {
         "gemini": {
             "enabled": True,
             "api_key_env": "GEMINI_API_KEY",
             "fallback_env": "GOOGLE_API_KEY",
-            "default_model": "gemini-2.0-flash",
+            "default_model": "gemini-2.0-flash-001",
         },
         "claude": {
             "enabled": True,
@@ -69,7 +69,7 @@ def save_config(config: Dict[str, Any], path: str = _CONFIG_PATH) -> None:
 def get_active_model(config: Optional[Dict[str, Any]] = None) -> tuple:
     if config is None:
         config = load_config()
-    return config.get("active_provider", "gemini"), config.get("active_model", "gemini-2.0-flash")
+    return config.get("active_provider", "gemini"), config.get("active_model", "gemini-2.0-flash-001")
 
 
 def set_active_model(provider: str, model: str, config: Optional[Dict[str, Any]] = None, path: str = _CONFIG_PATH) -> Dict[str, Any]:
