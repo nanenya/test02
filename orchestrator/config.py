@@ -5,7 +5,7 @@
 import json
 import os
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 MCP_DIRECTORY = "mcp_modules"
 
@@ -86,6 +86,33 @@ def _resolve_args(args: List[str]) -> List[str]:
     return [cwd if a in (".", "$CWD") else a for a in args]
 
 
+# 허용된 MCP 서버 실행 명령어 화이트리스트
+_ALLOWED_MCP_COMMANDS = {"npx", "node", "mcp-server-git", "mcp-server-fetch", "uvx", "python", "python3"}
+# args에서 거부할 셸 인젝션 문자 집합
+_SHELL_INJECT_CHARS = set(";|&`$><")
+
+
+def _validate_server_config(server: dict) -> bool:
+    """MCP 서버 설정의 command/args를 화이트리스트로 검증합니다.
+
+    유효하지 않으면 경고 로그를 남기고 False를 반환합니다.
+    """
+    name = server.get("name", "")
+    command = server.get("command", "")
+    if command not in _ALLOWED_MCP_COMMANDS:
+        logging.warning(
+            f"MCP 서버 '{name}': 허용되지 않은 command '{command}' — 건너뜁니다."
+        )
+        return False
+    for arg in server.get("args", []):
+        if any(c in str(arg) for c in _SHELL_INJECT_CHARS):
+            logging.warning(
+                f"MCP 서버 '{name}': args에 위험 문자 발견 — 건너뜁니다."
+            )
+            return False
+    return True
+
+
 def load_mcp_config() -> tuple:
     """MCP 서버 설정을 로드합니다.
 
@@ -100,11 +127,14 @@ def load_mcp_config() -> tuple:
             for s in registry.get("servers", []):
                 if not s.get("enabled", True):
                     continue
+                if not _validate_server_config(s):
+                    continue
                 servers.append({
                     "name": s["name"],
                     "command": s["command"],
                     "args": _resolve_args(s.get("args", [])),
                     "env": s.get("env"),
+                    "on_demand": s.get("on_demand", False),
                 })
             aliases = registry.get("tool_name_aliases", dict(_DEFAULT_TOOL_NAME_ALIASES))
             logging.info(f"MCP config loaded from {_REGISTRY_PATH}: {len(servers)} servers")
@@ -115,11 +145,14 @@ def load_mcp_config() -> tuple:
     # fallback: 하드코딩 기본값
     servers = []
     for s in _DEFAULT_MCP_SERVERS:
+        if not _validate_server_config(s):
+            continue
         servers.append({
             "name": s["name"],
             "command": s["command"],
             "args": _resolve_args(s["args"]),
             "env": s.get("env"),
+            "on_demand": s.get("on_demand", False),
         })
     return servers, dict(_DEFAULT_TOOL_NAME_ALIASES)
 
@@ -142,3 +175,41 @@ def load_model_config() -> tuple:
 
 
 ACTIVE_PROVIDER, ACTIVE_MODEL = load_model_config()
+
+
+# --- 환경변수 헬퍼 ---
+
+def get_env_with_fallback(primary: str, fallback: str) -> str:
+    """환경변수를 primary → fallback 순서로 조회합니다."""
+    return os.getenv(primary) or os.getenv(fallback) or ""
+
+
+# --- Lazy 캐시 Accessor ---
+
+_cached_servers: Optional[List[Dict]] = None
+_cached_aliases: Optional[Dict] = None
+_cached_model_config: Optional[tuple] = None
+
+
+def get_mcp_servers() -> List[Dict]:
+    """MCP 서버 설정을 캐시하여 반환합니다."""
+    global _cached_servers, _cached_aliases
+    if _cached_servers is None:
+        _cached_servers, _cached_aliases = load_mcp_config()
+    return _cached_servers
+
+
+def get_tool_aliases() -> Dict:
+    """도구 이름 별칭 맵을 캐시하여 반환합니다."""
+    global _cached_servers, _cached_aliases
+    if _cached_aliases is None:
+        _cached_servers, _cached_aliases = load_mcp_config()
+    return _cached_aliases
+
+
+def get_model_config() -> tuple:
+    """활성 모델 설정(provider, model)을 캐시하여 반환합니다."""
+    global _cached_model_config
+    if _cached_model_config is None:
+        _cached_model_config = load_model_config()
+    return _cached_model_config

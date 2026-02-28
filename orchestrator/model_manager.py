@@ -37,6 +37,15 @@ _DEFAULT_CONFIG = {
             "api_key_env": "XAI_API_KEY",
             "default_model": "",
         },
+        "ollama": {
+            "enabled": True,
+            "api_key_env": "",
+            "base_url_env": "OLLAMA_BASE_URL",
+            "default_base_url": "http://localhost:11434",
+            "default_model": "qwen2.5-coder:7b",
+            "high_model": "qwen2.5-coder:7b",
+            "standard_model": "qwen2.5-coder:3b",
+        },
     },
 }
 
@@ -82,6 +91,20 @@ def list_providers(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, An
     for name, info in config.get("providers", {}).items():
         api_key_env = info.get("api_key_env", "")
         fallback_env = info.get("fallback_env", "")
+        if name == "ollama":
+            # Ollama는 API 키 불필요, 서버 가동 여부로 판단
+            base_url = os.getenv(info.get("base_url_env", ""), info.get("default_base_url", "http://localhost:11434"))
+            result.append({
+                "name": name,
+                "enabled": info.get("enabled", True),
+                "api_key_env": "",
+                "has_api_key": True,  # 키 불필요
+                "default_model": info.get("default_model", ""),
+                "base_url": base_url,
+                "high_model": info.get("high_model", "qwen2.5-coder:7b"),
+                "standard_model": info.get("standard_model", "qwen2.5-coder:3b"),
+            })
+            continue
         has_key = bool(os.getenv(api_key_env)) or bool(os.getenv(fallback_env)) if fallback_env else bool(os.getenv(api_key_env))
         result.append({
             "name": name,
@@ -208,11 +231,38 @@ async def fetch_models_grok(config: Optional[Dict[str, Any]] = None) -> List[Dic
     return models
 
 
+async def fetch_models_ollama(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    """Ollama /api/tags 엔드포인트에서 설치된 모델 목록을 조회합니다."""
+    if config is None:
+        config = load_config()
+    provider_info = config.get("providers", {}).get("ollama", {})
+    base_url = os.getenv(
+        provider_info.get("base_url_env", "OLLAMA_BASE_URL"),
+        provider_info.get("default_base_url", "http://localhost:11434"),
+    )
+
+    import httpx
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{base_url}/api/tags")
+        resp.raise_for_status()
+        data = resp.json()
+
+    models = []
+    for m in data.get("models", []):
+        models.append({
+            "id": m.get("name", ""),
+            "name": m.get("name", ""),
+            "description": f"size: {m.get('size', 0) // 1024 // 1024}MB",
+        })
+    return models
+
+
 _PROVIDER_FETCHERS = {
     "gemini": fetch_models_gemini,
     "claude": fetch_models_claude,
     "openai": fetch_models_openai,
     "grok": fetch_models_grok,
+    "ollama": fetch_models_ollama,
 }
 
 

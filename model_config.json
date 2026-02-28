@@ -1,18 +1,19 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "active_provider": "gemini",
-  "active_model": "gemini-2.0-flash",
+  "active_model": "models/gemini-3.1-pro-preview",
+  "fallback_chain": ["gemini", "claude", "ollama"],
   "providers": {
     "gemini": {
       "enabled": true,
-      "api_key_env": "AIzaSyAjby5KDLBUCgqS6YGC61f3e4okFHQQAHc",
+      "api_key_env": "GEMINI_API_KEY",
       "fallback_env": "GOOGLE_API_KEY",
-      "default_model": "gemini-2.0-flash"
+      "default_model": "models/gemini-3.1-pro-preview"
     },
     "claude": {
       "enabled": true,
       "api_key_env": "ANTHROPIC_API_KEY",
-      "default_model": ""
+      "default_model": "claude-sonnet-4-6"
     },
     "openai": {
       "enabled": true,
@@ -23,6 +24,15 @@
       "enabled": true,
       "api_key_env": "XAI_API_KEY",
       "default_model": ""
+    },
+    "ollama": {
+      "enabled": true,
+      "api_key_env": "",
+      "base_url_env": "OLLAMA_BASE_URL",
+      "default_base_url": "http://localhost:11434",
+      "default_model": "qwen2.5-coder:3b",
+      "high_model": "qwen2.5-coder:7b",
+      "standard_model": "qwen2.5-coder:3b"
     }
   }
 }
