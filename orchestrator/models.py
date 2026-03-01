@@ -16,6 +16,15 @@ class AgentRequest(BaseModel):
     system_prompts: Optional[List[str]] = None
     persona: Optional[str] = None
     allowed_skills: Optional[List[str]] = None
+    # 4층 파이프라인 전용 필드
+    pipeline_action: Optional[str] = Field(
+        default=None,
+        description="파이프라인 액션 (confirm_design | reject_design | None=자동)"
+    )
+    pipeline_state: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="서버가 반환한 pipeline_state를 그대로 다시 전송 (커서 복원용)"
+    )
 
 class ToolCall(BaseModel):
     """단일 도구 호출(MCP)을 정의하는 모델"""
@@ -64,10 +73,16 @@ class ExecutionGroup(BaseModel):
 class AgentResponse(BaseModel):
     """서버가 CLI로 보내는 응답 모델"""
     conversation_id: str
-    # (수정) STEP_EXECUTED 상태 추가
-    status: Literal["PLAN_CONFIRMATION", "FINAL_ANSWER", "ERROR", "STEP_EXECUTED"]
+    status: Literal[
+        "PLAN_CONFIRMATION",
+        "FINAL_ANSWER",
+        "ERROR",
+        "STEP_EXECUTED",
+        "DESIGN_CONFIRMATION",   # 4층 파이프라인: 설계 확인 요청
+    ]
     history: List[str]
     message: str
     execution_group: Optional[ExecutionGroup] = None  # 다음 1개 그룹 확인용
     topic_split_info: Optional[Dict[str, Any]] = None  # 주제 분리 감지 결과
     token_usage: Optional[Dict[str, Any]] = None  # LLM 토큰 사용량 (provider/model/input/output/cost)
+    pipeline_state: Optional[Dict[str, Any]] = None  # {design_id, task_id, plan_id, phase}

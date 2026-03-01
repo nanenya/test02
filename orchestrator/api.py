@@ -35,6 +35,8 @@ from . import history_manager
 from . import graph_manager
 from . import agent_config_manager
 from . import mcp_db_manager
+from . import pipeline_db
+from . import pipeline_manager
 import asyncio
 import inspect
 import logging
@@ -126,6 +128,7 @@ async def lifespan(app: FastAPI):
     graph_manager.init_db()
     agent_config_manager.init_db()
     issue_tracker.init_db()
+    pipeline_db.init_db()          # 4층 파이프라인 테이블 초기화
     await tool_registry.initialize()
     yield
     await tool_registry.shutdown()
@@ -520,6 +523,248 @@ async def execute_group(request: AgentRequest):
         status="STEP_EXECUTED",
         history=history,
         message=f"그룹 [{group_to_execute.group_id}] 실행 완료"
+    )
+
+
+@app.post("/agent/pipeline", response_model=AgentResponse)
+async def pipeline_endpoint(request: AgentRequest):
+    """4층 파이프라인 통합 엔드포인트.
+
+    상태 흐름:
+      1. user_input 있음 + pipeline_cursor 없음  → 설계 생성 (DESIGN_CONFIRMATION)
+      2. pipeline_action="confirm_design"        → 태스크 분해 → 첫 실행 그룹 (PLAN_CONFIRMATION)
+      3. pipeline_action="reject_design"         → 설계 거부 후 재설계 (DESIGN_CONFIRMATION)
+      4. pipeline_cursor.phase="executing"       → 다음 단계 계산 (PLAN_CONFIRMATION or FINAL_ANSWER)
+    """
+    token_tracker.begin_tracking()
+
+    data = history_manager.load_conversation(request.conversation_id)
+    history = data.get("history", []) if data else list(request.history)
+    convo_id = data.get("id", request.conversation_id) if data else request.conversation_id
+
+    # 페르소나 해석 (기존 방식과 동일)
+    persona_prompt = ""
+    effective_allowed_skills = request.allowed_skills
+
+    if not request.system_prompts:
+        persona = agent_config_manager.get_effective_persona(
+            query=request.user_input or "",
+            explicit_name=request.persona,
+        )
+        if persona:
+            persona_prompt = persona.get("system_prompt", "")
+            if effective_allowed_skills is None and persona.get("allowed_skills"):
+                effective_allowed_skills = persona["allowed_skills"]
+    else:
+        persona_prompt = "\n".join(request.system_prompts)
+
+    try:
+        cursor = pipeline_db.get_cursor(convo_id)
+
+        # ── 설계 확인/거부 처리 ─────────────────────────────────────
+        if request.pipeline_action == "reject_design":
+            design_id = (cursor or {}).get("design_id") or (
+                (request.pipeline_state or {}).get("design_id")
+            )
+            if design_id:
+                pipeline_db.reject_design(design_id)
+                history.append("설계 거부됨. 재설계 진행.")
+            # 새 설계 생성 (user_input 없으면 원래 쿼리 재사용)
+            query = request.user_input or _extract_first_query(history)
+            return await pipeline_manager.start_design_phase(
+                conversation_id=convo_id,
+                query=query,
+                history=history,
+                persona_prompt=persona_prompt,
+                model_preference="high",
+            )
+
+        if request.pipeline_action == "confirm_design":
+            design_id = (cursor or {}).get("design_id") or (
+                (request.pipeline_state or {}).get("design_id")
+            )
+            if not design_id:
+                raise HTTPException(status_code=400, detail="확인할 설계 ID가 없습니다.")
+            return await pipeline_manager.proceed_after_design_confirm(
+                conversation_id=convo_id,
+                design_id=design_id,
+                history=history,
+                model_preference=request.model_preference,
+            )
+
+        # ── 실행 후 다음 단계 진행 (user_input 없음 + executing 상태) ──
+        if not request.user_input and cursor and cursor.get("phase") == "executing":
+            # execute_group에서 실행이 완료된 후 호출됨
+            execution_result = history[-1] if history else ""
+            result = await pipeline_manager.advance_after_execution(
+                conversation_id=convo_id,
+                execution_result=execution_result,
+                history=history,
+                model_preference=request.model_preference,
+            )
+            if result is not None:
+                return result
+            # None이면 파이프라인 상태 없음 → fallback to decide_and_act 로직
+
+        # ── 신규 쿼리 → 설계 생성 ──────────────────────────────────────
+        if request.user_input:
+            # IntentGate: chat이면 즉시 답변 (토큰 절약)
+            try:
+                intent = await classify_intent(request.user_input, "standard")
+                if intent == "chat":
+                    history.append(f"사용자 요청: {request.user_input}")
+                    direct = await generate_final_answer(history, request.model_preference)
+                    history.append(f"최종 답변: {direct}")
+                    title = await generate_title_for_conversation(history, request.model_preference)
+                    history_manager.save_conversation(
+                        convo_id, history, title, [], 0, is_final=True
+                    )
+                    return _resp(
+                        conversation_id=convo_id,
+                        status="FINAL_ANSWER",
+                        history=history,
+                        message=direct,
+                    )
+            except Exception as e:
+                logging.warning(f"IntentGate 실패: {e}")
+
+            return await pipeline_manager.start_design_phase(
+                conversation_id=convo_id,
+                query=request.user_input,
+                history=history,
+                persona_prompt=persona_prompt,
+                model_preference="high",
+            )
+
+        # ── 아무 상태도 없으면 안내 ────────────────────────────────────
+        return _resp(
+            conversation_id=convo_id,
+            status="ERROR",
+            history=history,
+            message="처리할 입력이 없습니다. user_input 또는 pipeline_action을 지정하세요.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback as _tb
+        issue_tracker.capture(
+            error_message=str(e),
+            error_type=type(e).__name__,
+            traceback=_tb.format_exc(),
+            context=f"pipeline_endpoint convo_id={convo_id}",
+            source="pipeline",
+        )
+        return _resp(
+            conversation_id=convo_id,
+            status="ERROR",
+            history=history,
+            message=f"파이프라인 오류: {type(e).__name__}: {e}",
+        )
+
+
+@app.post("/agent/pipeline/execute", response_model=AgentResponse)
+async def pipeline_execute(request: AgentRequest):
+    """파이프라인 전용 그룹 실행 엔드포인트.
+
+    기존 /agent/execute_group과 동일하게 그룹을 실행하되,
+    실행 성공 시 pipeline_manager.record_execution_success()를 호출하여
+    템플릿 학습을 수행합니다.
+    """
+    token_tracker.begin_tracking()
+
+    data = history_manager.load_conversation(request.conversation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="대화 ID를 찾을 수 없습니다.")
+
+    history = data.get("history", [])
+    plan_dicts = data.get("plan", [])
+    convo_id = data.get("id", request.conversation_id)
+
+    if not plan_dicts:
+        raise HTTPException(status_code=400, detail="실행할 계획이 없습니다.")
+
+    group_dict = plan_dicts[0]
+    group_to_execute = ExecutionGroup(**group_dict)
+    history.append(f"그룹 실행 시작: [{group_to_execute.group_id}] {group_to_execute.description}")
+
+    session_id = None
+    overall_success = True
+    try:
+        session_id = mcp_db_manager.start_session(convo_id, group_to_execute.group_id)
+    except Exception as e:
+        logging.warning(f"start_session 실패: {e}")
+
+    # 기존 execute_group과 동일한 실행 로직 (tool_registry 호출)
+    results = []
+    for task in group_to_execute.tasks:
+        try:
+            await tool_registry.ensure_tool_server_connected(task.tool_name)
+            tool_fn = tool_registry.get_tool(task.tool_name)
+            if not tool_fn:
+                raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
+            _validate_tool_arguments(tool_fn, task.tool_name, task.arguments)
+            t0 = time.monotonic()
+            if inspect.iscoroutinefunction(tool_fn):
+                result = await tool_fn(**task.arguments)
+            else:
+                result = tool_fn(**task.arguments)
+            dur = int((time.monotonic() - t0) * 1000)
+            result_str = str(result)[:MAX_TOOL_RESULT_LENGTH]
+            mcp_db_manager.log_usage(task.tool_name, success=True, session_id=session_id,
+                                     duration_ms=dur)
+            results.append((task.tool_name, result_str, None))
+        except Exception as exc:
+            results.append((task.tool_name, "", exc))
+            overall_success = False
+
+    has_error = False
+    for tool_name, result_str, exc in results:
+        if exc is not None:
+            has_error = True
+            history.append(f"  - 실행 오류 ({tool_name}): {exc}")
+            # 파이프라인 템플릿 실패 카운트
+            cursor = pipeline_db.get_cursor(convo_id)
+            if cursor and cursor.get("plan_id"):
+                with pipeline_db.get_db() as conn:
+                    row = conn.execute(
+                        "SELECT template_id FROM task_plans WHERE id=?",
+                        (cursor["plan_id"],)
+                    ).fetchone()
+                    if row and row["template_id"]:
+                        pipeline_db.increment_template_fail(row["template_id"])
+        else:
+            history.append(f"  - 실행 결과 ({tool_name}): {result_str}")
+
+    try:
+        if session_id:
+            mcp_db_manager.end_session(session_id, overall_success=overall_success)
+    except Exception as e:
+        logging.warning(f"end_session 실패: {e}")
+
+    if has_error:
+        history_manager.save_conversation(convo_id, history, "실행 오류", plan_dicts, 0, is_final=False)
+        return _resp(
+            conversation_id=convo_id,
+            status="ERROR",
+            history=history,
+            message=f"그룹 '{group_to_execute.group_id}' 실행 중 오류 발생",
+        )
+
+    # 성공 → 템플릿 학습
+    cursor = pipeline_db.get_cursor(convo_id)
+    if cursor and cursor.get("plan_id"):
+        pipeline_manager.record_execution_success(cursor["plan_id"], group_dict)
+
+    history.append(f"그룹 실행 완료: [{group_to_execute.group_id}]")
+    history_manager.save_conversation(convo_id, history, data.get("title", "실행 중"), [], 0, is_final=False)
+
+    return _resp(
+        conversation_id=convo_id,
+        status="STEP_EXECUTED",
+        history=history,
+        message=f"그룹 [{group_to_execute.group_id}] 실행 완료",
+        pipeline_state=cursor,
     )
 
 
