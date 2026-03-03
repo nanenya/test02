@@ -5,7 +5,11 @@
 # P2-B: 프로바이더 폴백 체인 지원 (model_config.json의 fallback_chain 순서대로 재시도)
 
 import logging
+import json
+import re
 from typing import Dict, Any, List, Literal, Optional
+from . import agent_config_manager as _acm
+from .models import WisdomEntry, PlanValidation
 
 logger = logging.getLogger(__name__)
 
@@ -138,13 +142,7 @@ async def generate_clarifying_questions(
     chain = _get_fallback_chain()
     last_exc: Exception = RuntimeError("no provider")
 
-    prompt = (
-        f"사용자가 다음 작업을 요청했습니다:\n\n\"{user_query}\"\n\n"
-        "실행하기 전에 범위, 모호한 부분, 전제 조건을 명확히 하기 위해 "
-        "사용자에게 물어봐야 할 핵심 질문 3~5개를 JSON 배열 형식으로만 반환하세요.\n"
-        "예시: [\"질문1\", \"질문2\", \"질문3\"]\n"
-        "질문이 불필요하면 빈 배열 []을 반환하세요."
-    )
+    prompt = _acm.render_prompt("clarifying_questions_user", user_query=user_query)
 
     for provider in chain:
         try:
@@ -181,10 +179,7 @@ async def summarize_history(
         return ""
 
     excerpt = "\n".join(str(h) for h in history)[:8000]
-    prompt_history = [
-        f"다음은 AI 에이전트와의 대화 이력입니다. 핵심 작업 내용, 완료된 항목, "
-        f"미완료 항목, 중요한 결정 사항만 3~5문장으로 간결하게 요약하세요:\n\n{excerpt}"
-    ]
+    prompt_history = [_acm.render_prompt("summarize_history_user", excerpt=excerpt)]
 
     for provider in _get_fallback_chain():
         try:
@@ -210,11 +205,7 @@ async def classify_intent(
     'task': 파일 생성/수정/실행 등 도구가 필요한 작업
     실패 시 'task'를 반환합니다 (보수적 기본값).
     """
-    prompt = (
-        f"사용자 요청: \"{user_query}\"\n\n"
-        "위 요청이 단순 질문/대화('chat')인지, 파일·코드·시스템 도구 사용이 필요한 작업('task')인지 "
-        "한 단어로만 답하세요: chat 또는 task"
-    )
+    prompt = _acm.render_prompt("classify_intent_user", user_query=user_query)
 
     for provider in _get_fallback_chain():
         try:
@@ -260,18 +251,11 @@ async def generate_design(
         recent = history[-6:]  # 최근 6항목만 (토큰 절약)
         history_ctx = "\n".join(str(h) for h in recent) + "\n\n"
 
-    prompt = (
-        f"{system_ctx}{history_ctx}"
-        f"사용자 요청:\n\"{user_query}\"\n\n"
-        "위 요청을 분석하여 아래 JSON 형식으로 설계를 반환하세요. "
-        "반드시 JSON만 반환하고 다른 텍스트는 포함하지 마세요.\n\n"
-        "{\n"
-        '  "goal": "최종 목표 한 줄 요약",\n'
-        '  "approach": "접근 방법 2-3문장",\n'
-        '  "constraints": ["제약사항1", "제약사항2"],\n'
-        '  "expected_outputs": ["결과물1", "결과물2"],\n'
-        '  "complexity": "simple 또는 medium 또는 complex"\n'
-        "}"
+    prompt = _acm.render_prompt(
+        "design_user",
+        system_ctx=system_ctx,
+        history_ctx=history_ctx,
+        user_query=user_query,
     )
 
     for provider in _get_fallback_chain():
@@ -314,12 +298,10 @@ async def decompose_tasks(
         f"접근법: {design.get('approach', '')}\n"
         f"결과물: {', '.join(design.get('expected_outputs', []))}"
     )
-    prompt = (
-        f"설계 내용:\n{design_text}\n\n"
-        f"사용자 원래 요청: \"{user_query}\"\n\n"
-        "위 설계를 독립적으로 실행 가능한 태스크로 분해하세요. "
-        "최대 10개, JSON 배열만 반환하세요.\n\n"
-        '[{"title": "태스크 제목", "description": "무엇을 해야 하는지 구체적 설명"}, ...]'
+    prompt = _acm.render_prompt(
+        "decompose_tasks_user",
+        design_text=design_text,
+        user_query=user_query,
     )
 
     for provider in _get_fallback_chain():
@@ -359,14 +341,11 @@ async def map_plans(
     """
     import json, re
     tools_str = ", ".join(available_tools[:30]) if available_tools else "없음"
-    prompt = (
-        f"태스크: {task.get('title', '')}\n"
-        f"설명: {task.get('description', '')}\n\n"
-        f"사용 가능한 도구 목록: {tools_str}\n\n"
-        "위 태스크를 실행 순서대로 분해하세요. "
-        "각 단계는 하나의 도구 호출로 처리 가능해야 합니다. "
-        "최대 8단계, JSON 배열만 반환하세요.\n\n"
-        '[{"action": "무엇을 할 것인지 설명", "tool_hints": ["도구명1", "도구명2"]}, ...]'
+    prompt = _acm.render_prompt(
+        "map_plans_user",
+        task_title=task.get("title", ""),
+        task_description=task.get("description", ""),
+        tools_str=tools_str,
     )
 
     for provider in _get_fallback_chain():
@@ -418,22 +397,14 @@ async def build_execution_group_for_step(
         recent = "\n".join(str(h) for h in history[-4:])
         history_ctx = f"최근 대화:\n{recent}\n\n"
 
-    prompt = (
-        f"{history_ctx}"
-        f"전체 목표: {design.get('goal', '')}\n"
-        f"현재 태스크: {task.get('title', '')}\n"
-        f"현재 단계: {plan_step.get('action', '')}\n"
-        f"예상 도구 힌트: {plan_step.get('tool_hints', [])}\n\n"
-        f"사용 가능한 도구:\n{tools_desc}\n\n"
-        "위 단계를 실행하기 위한 도구 호출을 JSON으로 반환하세요. "
-        "반드시 아래 형식만 반환하고, 도구가 필요 없으면 tasks를 빈 배열로 하세요.\n\n"
-        "{\n"
-        '  "group_id": "group_1",\n'
-        '  "description": "이 단계에서 하는 일 설명",\n'
-        '  "tasks": [\n'
-        '    {"tool_name": "도구이름", "arguments": {"인자명": "값"}, "model_preference": "standard"}\n'
-        "  ]\n"
-        "}"
+    prompt = _acm.render_prompt(
+        "build_execution_group_user",
+        history_ctx=history_ctx,
+        goal=design.get("goal", ""),
+        task_title=task.get("title", ""),
+        step_action=plan_step.get("action", ""),
+        tool_hints=str(plan_step.get("tool_hints", [])),
+        tools_desc=tools_desc,
     )
 
     for provider in _get_fallback_chain():
@@ -463,6 +434,151 @@ async def build_execution_group_for_step(
 
 # ── Phase 2: 템플릿 인자 적응 ─────────────────────────────────────────────────
 
+def _extract_json_block(text: str) -> str:
+    """```json ... ``` 블록에서 JSON 문자열을 추출합니다."""
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if m:
+            return m.group(1).strip()
+    return text.strip()
+
+
+async def extract_wisdom(
+    tool_results: List[str],
+    context: str = "",
+) -> List[dict]:
+    """도구 실행 결과에서 재사용 가능한 학습 사항을 추출합니다.
+
+    standard 모델 사용 (비용 절약). 실패 시 [] 반환.
+    Returns: [{category, content, source_tool}, ...]
+    """
+    if not tool_results:
+        return []
+
+    # 최근 10개 결과만 처리 (토큰 절약)
+    results_text = "\n".join(str(r) for r in tool_results[-10:])
+    prompt = _acm.render_prompt(
+        "extract_wisdom_user",
+        tool_results=results_text,
+        context=context[:500],
+    )
+
+    for provider in _get_fallback_chain():
+        try:
+            module = _get_client_module(provider)
+            raw = await module.generate_final_answer(
+                history=[f"WISDOM_EXTRACT: {prompt}"],
+                model_preference="standard",
+            )
+            text = _extract_json_block(raw)
+            match = re.search(r"\[.*\]", text, re.DOTALL)
+            if match:
+                items = json.loads(match.group())
+                if isinstance(items, list):
+                    return [
+                        {
+                            "category": e.get("category", "misc"),
+                            "content": e.get("content", ""),
+                            "source_tool": e.get("source_tool", ""),
+                        }
+                        for e in items
+                        if isinstance(e, dict) and e.get("content")
+                    ]
+            return []
+        except Exception as exc:
+            logger.debug(f"[Wisdom] provider={provider} 실패: {exc}")
+
+    return []
+
+
+async def validate_execution_plan(
+    plan_list,
+    available_tools: List[str],
+) -> PlanValidation:
+    """실행 계획의 도구 유효성·인자 충실도·완료 조건을 검증합니다.
+
+    standard 모델 사용. 실패 시 PlanValidation(valid=True, score=1.0) 반환 (보수적 통과).
+    """
+    if not plan_list:
+        return PlanValidation(valid=True, score=1.0)
+
+    try:
+        plan_json = json.dumps(
+            [g.model_dump() if hasattr(g, "model_dump") else g for g in plan_list],
+            ensure_ascii=False,
+        )
+    except Exception:
+        return PlanValidation(valid=True, score=1.0)
+
+    tools_str = ", ".join(available_tools[:50]) if available_tools else "없음"
+    prompt = _acm.render_prompt(
+        "validate_plan_user",
+        available_tools=tools_str,
+        plan_json=plan_json[:3000],
+    )
+
+    for provider in _get_fallback_chain():
+        try:
+            module = _get_client_module(provider)
+            raw = await module.generate_final_answer(
+                history=[f"PLAN_VALIDATE: {prompt}"],
+                model_preference="standard",
+            )
+            text = _extract_json_block(raw)
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+                return PlanValidation(
+                    valid=bool(data.get("valid", True)),
+                    score=float(data.get("score", 1.0)),
+                    issues=data.get("issues", []),
+                    suggestions=data.get("suggestions", []),
+                )
+        except Exception as exc:
+            logger.debug(f"[PlanValidate] provider={provider} 실패: {exc}")
+
+    return PlanValidation(valid=True, score=1.0)
+
+
+async def classify_task_category(user_query: str) -> str:
+    """사용자 쿼리를 태스크 카테고리로 분류합니다 (LLM 없이 휴리스틱).
+
+    Returns: "quick" | "deep" | "ultrabrain" | "visual"
+    키워드 검사 우선, 단어 수는 fallback.
+    """
+    q = user_query.lower().strip()
+    words = q.split()
+
+    # 아키텍처/설계/전체/리팩터 키워드 → ultrabrain (키워드 우선)
+    ultrabrain_kw = [
+        "아키텍처", "설계", "전체", "리팩터", "리팩토링", "refactor",
+        "architecture", "전반", "시스템 구조", "분석해줘", "분석 해줘",
+        "전체적으로", "처음부터",
+    ]
+    if any(kw in q for kw in ultrabrain_kw):
+        return "ultrabrain"
+
+    # ui/css/화면/디자인/레이아웃 키워드 → visual
+    visual_kw = [
+        "ui", "css", "화면", "디자인", "레이아웃", "layout", "design",
+        "스타일", "style", "색상", "color", "이미지", "image",
+    ]
+    if any(kw in q for kw in visual_kw):
+        return "visual"
+
+    # 단어 5개 이하 → quick (경량)
+    if len(words) <= 5:
+        return "quick"
+
+    return "deep"
+
+
+def _get_model_for_category(category: Optional[str]) -> str:
+    """카테고리에 맞는 model_preference 문자열을 반환합니다."""
+    from .constants import CATEGORY_MODEL_MAP
+    return CATEGORY_MODEL_MAP.get(category or "", "auto")
+
+
 async def adapt_template_arguments(
     template_group: Dict[str, Any],
     plan_step: Dict[str, Any],
@@ -485,19 +601,13 @@ async def adapt_template_arguments(
     if history:
         history_ctx = "최근 대화:\n" + "\n".join(str(h) for h in history) + "\n\n"
 
-    prompt = (
-        f"{history_ctx}"
-        f"현재 목표: {design.get('goal', '')}\n"
-        f"현재 태스크: {task.get('title', '')}\n"
-        f"현재 단계: {plan_step.get('action', '')}\n\n"
-        f"아래는 이전에 성공한 실행 템플릿입니다:\n{template_json}\n\n"
-        "위 템플릿의 arguments 값만 현재 컨텍스트에 맞게 수정하세요.\n"
-        "반드시 지켜야 할 규칙:\n"
-        "  1. tool_name은 절대 변경하지 마세요.\n"
-        "  2. tasks 배열의 길이와 순서를 유지하세요.\n"
-        "  3. arguments의 키(key)는 변경하지 마세요, 값(value)만 수정하세요.\n"
-        "  4. 수정이 불필요한 arguments는 그대로 유지하세요.\n"
-        "수정된 전체 JSON만 반환하세요 (설명 없이)."
+    prompt = _acm.render_prompt(
+        "adapt_template_user",
+        history_ctx=history_ctx,
+        goal=design.get("goal", ""),
+        task_title=task.get("title", ""),
+        step_action=plan_step.get("action", ""),
+        template_json=template_json,
     )
 
     for provider in _get_fallback_chain():

@@ -126,6 +126,17 @@ def init_db(path: Path = DB_PATH) -> None:
             FOREIGN KEY (convo_id_a) REFERENCES conversations(id) ON DELETE CASCADE,
             FOREIGN KEY (convo_id_b) REFERENCES conversations(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS session_wisdom (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT    NOT NULL,
+            category        TEXT    NOT NULL,
+            content         TEXT    NOT NULL,
+            source_tool     TEXT    DEFAULT '',
+            created_at      TEXT    NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_wisdom_convo ON session_wisdom(conversation_id);
         """)
 
 
@@ -852,3 +863,80 @@ def render_graph(graph_data: Dict, center_id: Optional[str] = None) -> None:
 
     text.append("\n범례: 🗨 대화  🔵 토픽  🏷 키워드  📁 그룹", style="dim")
     console.print(Panel(text, title="대화 관계 그래프", border_style="bright_blue"))
+
+
+# ── 누적 지식(Wisdom) CRUD ────────────────────────────────────────
+
+def save_wisdom(
+    convo_id: str,
+    entries: List[dict],
+    db_path: Path = DB_PATH,
+) -> None:
+    """실행 결과에서 추출한 지식 항목을 저장합니다.
+
+    entries: [{category, content, source_tool}, ...]
+    WISDOM_MAX_ENTRIES 초과 시 오래된 항목 삭제.
+    """
+    from .constants import WISDOM_MAX_ENTRIES
+
+    if not entries:
+        return
+
+    now = utcnow()
+    with get_db(db_path) as conn:
+        for entry in entries:
+            conn.execute(
+                """
+                INSERT INTO session_wisdom
+                    (conversation_id, category, content, source_tool, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    convo_id,
+                    entry.get("category", "misc"),
+                    entry.get("content", ""),
+                    entry.get("source_tool", ""),
+                    now,
+                ),
+            )
+        # 초과분 삭제 (오래된 것 우선)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM session_wisdom WHERE conversation_id=?",
+            (convo_id,),
+        ).fetchone()[0]
+        if count > WISDOM_MAX_ENTRIES:
+            excess = count - WISDOM_MAX_ENTRIES
+            conn.execute(
+                """
+                DELETE FROM session_wisdom WHERE id IN (
+                    SELECT id FROM session_wisdom
+                    WHERE conversation_id=?
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                )
+                """,
+                (convo_id, excess),
+            )
+
+
+def load_wisdom(
+    convo_id: str,
+    limit: int = 50,
+    db_path: Path = DB_PATH,
+) -> List[dict]:
+    """대화에 저장된 지식 항목을 반환합니다 (최신순).
+
+    Returns: [{category, content, source_tool, created_at}, ...]
+    """
+    with get_db(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT category, content, source_tool, created_at
+            FROM session_wisdom
+            WHERE conversation_id=?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (convo_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]

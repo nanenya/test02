@@ -323,23 +323,24 @@ class TestSummarizeHistory:
 
 class TestRolePrompts:
     def test_planner_and_reviewer_roles_defined(self):
-        from orchestrator.api import _ROLE_PROMPTS
-        assert "planner" in _ROLE_PROMPTS
-        assert "reviewer" in _ROLE_PROMPTS
+        from orchestrator import agent_config_manager
+        # role_planner, role_reviewer가 DB에 존재하는지 확인
+        assert agent_config_manager.get_system_prompt("role_planner") is not None
+        assert agent_config_manager.get_system_prompt("role_reviewer") is not None
 
     def test_planner_prompt_not_empty(self):
-        from orchestrator.api import _ROLE_PROMPTS
-        assert len(_ROLE_PROMPTS["planner"]) > 20
+        from orchestrator import agent_config_manager
+        planner = agent_config_manager.get_prompt("role_planner")
+        assert len(planner) > 20
 
     def test_reviewer_prompt_mentions_completion(self):
-        from orchestrator.api import _ROLE_PROMPTS
-        # reviewer는 완료 여부 확인을 언급해야 함
-        reviewer = _ROLE_PROMPTS["reviewer"]
+        from orchestrator import agent_config_manager
+        reviewer = agent_config_manager.get_prompt("role_reviewer")
         assert "완료" in reviewer or "complete" in reviewer.lower()
 
     def test_planner_prompt_mentions_plan(self):
-        from orchestrator.api import _ROLE_PROMPTS
-        planner = _ROLE_PROMPTS["planner"]
+        from orchestrator import agent_config_manager
+        planner = agent_config_manager.get_prompt("role_planner")
         assert "계획" in planner or "plan" in planner.lower()
 
 

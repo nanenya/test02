@@ -42,3 +42,21 @@ def utcnow() -> str:
 def utcnow_timestamp() -> float:
     """현재 UTC 시각을 Unix timestamp(float)로 반환합니다."""
     return datetime.now(timezone.utc).timestamp()
+
+
+# 카테고리 → model_preference 매핑 [D]
+CATEGORY_MODEL_MAP: dict = {
+    "quick":      "standard",
+    "deep":       "high",
+    "ultrabrain": "high",
+    "visual":     "auto",
+    "code":       "high",
+    "analysis":   "high",
+    "creative":   "auto",
+}
+
+# 계획 검증 점수 임계값 [E]
+PLAN_VALIDATION_MIN_SCORE: float = 0.6
+
+# 누적 지식 최대 항목 수 (대화당) [B]
+WISDOM_MAX_ENTRIES: int = 50
