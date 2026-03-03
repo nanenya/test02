@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from .tool_registry import get_filtered_tool_descriptions
 from .models import ExecutionGroup
 from .constants import HISTORY_MAX_CHARS
+from . import agent_config_manager as _acm
 from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
@@ -143,55 +144,15 @@ async def generate_execution_plan(
     tool_descriptions = get_filtered_tool_descriptions(allowed_skills)
     formatted_history = _truncate_history(history)
     custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
+    system = custom_system_prompt + "\n\n" + _acm.get_prompt("react_planner_system")
 
-    system = f"""{custom_system_prompt}
-
-당신은 사용자의 목표를 달성하기 위해, '이전 대화'를 분석하여 '다음 1단계'의 계획을 수립하는 'ReAct 플래너'입니다.
-반드시 유효한 JSON만 응답하세요. 다른 텍스트는 포함하지 마세요."""
-
-    user = f"""## 최종 목표 (사용자 최초 요청):
-{user_query}
-
-## 사용자가 제공한 추가 요구사항 및 컨텍스트:
-{requirements_content if requirements_content else "없음"}
-
-## 사용 가능한 도구 목록:
-{tool_descriptions}
-
-## 이전 대화 요약 (매우 중요!):
-{formatted_history}
-
-## 지시사항 (필독!):
-1. '최종 목표'와 '이전 대화 요약'을 면밀히 분석합니다.
-2. '이전 대화 요약'에 "실행 결과"가 있다면, 그 결과를 **입력으로 사용**하여 **다음에 실행할 논리적인 1개의 '실행 그룹(ExecutionGroup)'**을 만드세요.
-   (예: "실행 결과: ['a.txt']"가 있다면, 다음 그룹은 'read_file(path="a.txt")' 태스크를 포함해야 합니다.)
-3. 만약 '이전 대화 요약'을 분석했을 때 모든 '최종 목표'가 완료되었다고 판단되면, 반드시 빈 리스트( `[]` )를 반환하세요.
-4. 만약 '이전 대화 요약'이 비어있거나 "실행 결과"가 없다면(첫 단계), '최종 목표' 달성을 위한 **첫 번째 1개의 '실행 그룹'**을 만드세요.
-5. 각 'task' 객체 내에 'model_preference' 필드를 포함해야 합니다 ('high', 'standard', 'auto').
-
-## 출력 형식:
-반드시 'ExecutionGroup' 객체의 리스트(배열) 형식으로만 응답해야 합니다.
-**다음 1개 그룹만** 포함하거나, **완료 시 빈 리스트 `[]`**를 반환해야 합니다.
-
-# 예시 1: 다음 단계가 남은 경우 (1개 그룹만 포함)
-[
-  {{
-    "group_id": "group_N",
-    "description": "다음에 실행할 단일 그룹에 대한 설명",
-    "tasks": [
-      {{
-        "tool_name": "도구_이름",
-        "arguments": {{"이전_결과_활용": "값"}},
-        "model_preference": "standard"
-      }}
-    ]
-  }}
-]
-
-# 예시 2: 모든 작업 완료 시
-[]
-
-## 다음 실행 계획 (JSON):"""
+    user = _acm.render_prompt(
+        "react_planner_instruction",
+        user_query=user_query,
+        requirements_content=requirements_content if requirements_content else "없음",
+        tool_descriptions=tool_descriptions,
+        formatted_history=formatted_history,
+    )
 
     try:
         text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
@@ -227,18 +188,9 @@ async def generate_final_answer(
     model_preference: ModelPreference = "auto"
 ) -> str:
     model_name = _get_model_name(model_preference, default_type="standard")
+    system = _acm.get_prompt("final_answer_system")
     history_str = _truncate_history(history)
-
-    system = "당신은 AI 에이전트입니다. 작업 기록을 바탕으로 사용자에게 최종 답변을 한국어로 생성합니다."
-    user = f"""다음은 AI 에이전트와 사용자의 작업 기록 요약입니다.
-모든 작업이 완료되었습니다.
-전체 '실행 결과'와 '사용자 목표'를 바탕으로 사용자에게 제공할 최종적이고 종합적인 답변을 한국어로 생성해주세요.
-
---- 작업 기록 요약 ---
-{history_str}
----
-
-최종 답변:"""
+    user = _acm.render_prompt("final_answer_user", history_str=history_str)
 
     try:
         text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)
@@ -261,17 +213,9 @@ async def extract_keywords(
         return []
 
     model_name = _get_model_name(model_preference, default_type="standard")
+    system = _acm.get_prompt("extract_keywords_system")
     history_str = _truncate_history(history)
-
-    system = "당신은 텍스트에서 핵심 키워드를 추출하는 전문가입니다. 반드시 JSON 배열만 응답하세요."
-    user = f"""다음 대화에서 핵심 키워드를 5~10개 추출해주세요.
-명사 위주로, 한국어/영어 혼용 가능합니다.
-
---- 대화 내용 ---
-{history_str}
----
-
-JSON 배열로만 응답하세요. 예: ["FastAPI", "SQLite", "ReAct", "Python"]"""
+    user = _acm.render_prompt("extract_keywords_user", history_str=history_str)
 
     try:
         text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
@@ -300,24 +244,9 @@ async def detect_topic_split(
         return None
 
     model_name = _get_model_name(model_preference, default_type="standard")
+    system = _acm.get_prompt("detect_topic_split_system")
     history_str = _truncate_history(history)
-
-    system = "당신은 대화 분석 전문가입니다. 반드시 JSON 형식만 응답하세요."
-    user = f"""다음 대화에서 주제가 크게 전환된 지점이 있는지 분석해주세요.
-
---- 대화 내용 (인덱스 포함) ---
-{history_str}
----
-
-JSON 형식으로만 응답하세요:
-{{
-  "detected": true또는false,
-  "split_index": 정수(주제 전환이 시작되는 메시지 인덱스),
-  "reason": "전환 이유 설명",
-  "topic_a": "첫 번째 주제 이름",
-  "topic_b": "두 번째 주제 이름"
-}}
-주제 전환이 없으면 detected를 false로 응답하세요."""
+    user = _acm.render_prompt("detect_topic_split_user", history_str=history_str)
 
     try:
         text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
@@ -347,15 +276,12 @@ async def generate_title_for_conversation(
     if len(history) < 2:
         return "새로운_대화"
 
-    system = "당신은 대화를 간결하게 요약하는 전문가입니다."
-    user = f"""다음 대화 내용을 바탕으로, 어떤 작업을 수행했는지 알 수 있도록 5단어 이내의 간결한 '요약'을 한국어로 만들어줘.
-
---- 대화 내용 (초반 2개) ---
-{history[0]}
-{history[1] if len(history) > 1 else ""}
----
-
-요약:"""
+    system = _acm.get_prompt("generate_title_system")
+    user = _acm.render_prompt(
+        "generate_title_user",
+        msg0=history[0],
+        msg1=history[1] if len(history) > 1 else "",
+    )
 
     try:
         text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)

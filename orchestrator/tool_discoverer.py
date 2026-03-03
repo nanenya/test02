@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import pipeline_db
 from . import mcp_db_manager
 from . import tool_registry
+from . import agent_config_manager as _acm
 from .constants import utcnow
 
 logger = logging.getLogger(__name__)
@@ -154,18 +155,10 @@ async def generate_tool_implementation(
     """
     from .llm_client import _get_fallback_chain, _get_client_module
 
-    prompt = (
-        f"다음 기능을 수행하는 Python 함수를 작성하세요:\n\n"
-        f"함수 이름: {tool_hint}\n"
-        f"컨텍스트: {context or '일반적인 도구 함수'}\n\n"
-        "요구사항:\n"
-        "  1. 함수 이름은 정확히 위에서 지정한 이름으로 작성하세요.\n"
-        "  2. 적절한 타입 힌트와 docstring을 포함하세요.\n"
-        "  3. os, subprocess, eval, exec는 절대 사용하지 마세요.\n"
-        "  4. 파일 쓰기/삭제 작업은 하지 마세요 (읽기만 허용).\n"
-        "  5. 표준 라이브러리만 사용하세요 (json, re, pathlib, typing 등).\n"
-        "  6. 함수 코드만 반환하세요 (import문 포함 가능, 주석 허용).\n\n"
-        "Python 코드만 반환하세요:"
+    prompt = _acm.render_prompt(
+        "tool_implementation_user",
+        tool_hint=tool_hint,
+        context=context or "일반적인 도구 함수",
     )
 
     chain = _get_fallback_chain()

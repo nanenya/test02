@@ -4,6 +4,7 @@
 
 import json
 import os
+import sys
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -82,15 +83,61 @@ _REGISTRY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_s
 
 
 def _resolve_args(args: List[str]) -> List[str]:
-    """args 내 "." 또는 "$CWD"를 os.getcwd()로 치환합니다."""
+    """args 내 경로 플레이스홀더를 실제 경로로 치환합니다.
+
+    - "." 또는 "$CWD"  → os.getcwd()
+    - "$CWD/..."       → os.path.join(cwd, ...)
+    """
     cwd = os.getcwd()
-    return [cwd if a in (".", "$CWD") else a for a in args]
+    result = []
+    for a in args:
+        if a in (".", "$CWD"):
+            result.append(cwd)
+        elif a.startswith("$CWD/"):
+            result.append(os.path.join(cwd, a[5:]))
+        else:
+            result.append(a)
+    return result
 
 
 # 허용된 MCP 서버 실행 명령어 화이트리스트
-_ALLOWED_MCP_COMMANDS = {"npx", "node", "mcp-server-git", "mcp-server-fetch", "uvx", "python", "python3"}
-# args에서 거부할 셸 인젝션 문자 집합
-_SHELL_INJECT_CHARS = set(";|&`$><")
+_ALLOWED_MCP_COMMANDS = {
+    "npx", "node",
+    "mcp-server-git", "mcp-server-fetch",
+    "mcp-server-docker", "mcp-server-duckduckgo",
+    "uvx", "python", "python3",
+}
+# args에서 거부할 셸 인젝션 문자 집합 ($CWD 접두사는 허용)
+_SHELL_INJECT_CHARS = set(";|&`><")
+
+
+def _resolve_pip_command(command: str) -> str:
+    """pip 기반 명령어를 venv bin의 절대 경로로 resolve합니다.
+
+    현재 Python 실행 환경의 venv/bin에서 명령어를 찾아 절대 경로로 반환합니다.
+    venv에 없으면 원본 command 문자열을 반환합니다 (시스템 PATH에서 찾도록).
+    """
+    venv_bin = os.path.dirname(sys.executable)
+    candidate = os.path.join(venv_bin, command)
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
+    return command
+
+
+def _resolve_env(env: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+    """env 딕셔너리의 빈 값을 os.environ에서 자동 resolve합니다.
+
+    JSON에 저장된 빈 문자열("")은 .env 또는 환경변수에서 실제 값을 읽습니다.
+    모든 값이 비어있으면 None 반환 (서브프로세스가 부모 환경 상속).
+    """
+    if not env:
+        return None
+    resolved = {}
+    for k, v in env.items():
+        actual = v or os.getenv(k, "")
+        if actual:
+            resolved[k] = actual
+    return resolved or None
 
 
 def _validate_server_config(server: dict) -> bool:
@@ -130,11 +177,14 @@ def load_mcp_config() -> tuple:
                     continue
                 if not _validate_server_config(s):
                     continue
+                cmd = s["command"]
+                if s.get("package_manager") == "pip":
+                    cmd = _resolve_pip_command(cmd)
                 servers.append({
                     "name": s["name"],
-                    "command": s["command"],
+                    "command": cmd,
                     "args": _resolve_args(s.get("args", [])),
-                    "env": s.get("env"),
+                    "env": _resolve_env(s.get("env")),
                     "on_demand": s.get("on_demand", False),
                 })
             aliases = registry.get("tool_name_aliases", dict(_DEFAULT_TOOL_NAME_ALIASES))
@@ -152,7 +202,7 @@ def load_mcp_config() -> tuple:
             "name": s["name"],
             "command": s["command"],
             "args": _resolve_args(s["args"]),
-            "env": s.get("env"),
+            "env": _resolve_env(s.get("env")),
             "on_demand": s.get("on_demand", False),
         })
     return servers, dict(_DEFAULT_TOOL_NAME_ALIASES)
