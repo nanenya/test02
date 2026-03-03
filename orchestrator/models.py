@@ -6,6 +6,14 @@ import json
 from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Any, List, Literal, Optional
 
+
+class TaskCategory:
+    QUICK      = "quick"       # 경량 → standard
+    DEEP       = "deep"        # 심층 → high
+    ULTRABRAIN = "ultrabrain"  # 최고 복잡도 → high
+    VISUAL     = "visual"      # 시각/UI → gemini preferred
+
+
 class AgentRequest(BaseModel):
     """CLI가 서버로 보내는 요청 모델"""
     conversation_id: str = Field(..., description="대화 세션 식별자")
@@ -25,6 +33,7 @@ class AgentRequest(BaseModel):
         default=None,
         description="서버가 반환한 pipeline_state를 그대로 다시 전송 (커서 복원용)"
     )
+    force_react: bool = Field(default=False, description="3-tier 자동 라우팅 우회, 항상 ReAct 모드 사용")
 
 class ToolCall(BaseModel):
     """단일 도구 호출(MCP)을 정의하는 모델"""
@@ -34,6 +43,7 @@ class ToolCall(BaseModel):
         default="auto",
         description="이 태스크에 사용할 모델 (standard, high, auto)"
     )
+    task_category: Optional[str] = Field(default=None, description="태스크 카테고리")
 
     @field_validator("tool_name")
     @classmethod
@@ -61,6 +71,8 @@ class ExecutionGroup(BaseModel):
     group_id: str = Field(..., max_length=100, description="그룹의 고유 ID (예: 'group_1')")
     description: str = Field(..., max_length=500, description="사용자에게 보여줄 그룹에 대한 설명")
     tasks: List[ToolCall] = Field(..., description="이 그룹에서 실행할 도구 호출 목록")
+    can_parallel: bool = Field(default=False, description="다른 그룹과 병렬 실행 가능 여부")
+    category: Optional[str] = Field(default=None, description="그룹 카테고리")
 
     @field_validator("tasks")
     @classmethod
@@ -69,6 +81,19 @@ class ExecutionGroup(BaseModel):
         if len(v) > 50:
             raise ValueError(f"태스크 수가 50개를 초과합니다: {len(v)}개")
         return v
+
+class WisdomEntry(BaseModel):
+    category: str        # conventions/successes/failures/gotchas/commands
+    content: str
+    source_tool: str = ""
+
+
+class PlanValidation(BaseModel):
+    valid: bool
+    score: float = 1.0
+    issues: List[str] = []
+    suggestions: List[str] = []
+
 
 class AgentResponse(BaseModel):
     """서버가 CLI로 보내는 응답 모델"""

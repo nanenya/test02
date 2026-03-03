@@ -256,10 +256,13 @@ def _load_context_files(start_dir: Optional[str] = None) -> str:
 
 # P1-B: 태스크 카테고리 → model_preference 매핑
 _CATEGORY_TO_MODEL_PREF: dict = {
-    "quick":    "standard",   # 단순 수정, 타이핑 수정
-    "code":     "high",       # 코드 작성/분석
-    "analysis": "high",       # 심층 분석, 아키텍처 결정
-    "creative": "high",       # 창의적 작업, 문서 작성
+    "quick":      "standard",   # 단순 수정, 타이핑 수정
+    "code":       "high",       # 코드 작성/분석
+    "analysis":   "high",       # 심층 분석, 아키텍처 결정
+    "creative":   "high",       # 창의적 작업, 문서 작성
+    "deep":       "high",       # 심층 분석
+    "ultrabrain": "high",       # 최고 복잡도 → 파이프라인 자동 라우팅
+    "visual":     "auto",       # 시각/UI → gemini preferred
 }
 
 os.makedirs(PROMPTS_DIR, exist_ok=True)
@@ -397,10 +400,11 @@ def run(
     auto: Annotated[bool, typer.Option("--auto", "-a", help="자동 실행 모드: 계획 승인 없이 완료까지 자동 반복")] = False,
     force: Annotated[bool, typer.Option("--force", "-f", help="--auto 모드에서 위험 도구도 자동 승인 (주의 필요)")] = False,
     max_steps: Annotated[int, typer.Option("--max-steps", help="자동 모드 최대 실행 단계 수 (0=무제한, 기본 50)")] = 50,
-    category: Annotated[Optional[str], typer.Option("--category", "-C", help="태스크 유형 (quick/code/analysis/creative) → 모델 자동 선택")] = None,
+    category: Annotated[Optional[str], typer.Option("--category", "-C", help="태스크 유형 (quick/code/analysis/creative/deep/ultrabrain/visual) → 모델 자동 선택")] = None,
     no_context: Annotated[bool, typer.Option("--no-context", help="AGENTS.md / README.md 자동 주입 비활성화")] = False,
     plan: Annotated[bool, typer.Option("--plan", help="Prometheus 모드: 실행 전 요구사항 명확화 질문")] = False,
     summarize: Annotated[bool, typer.Option("--summarize", help="히스토리 임계치 초과 시 LLM 요약 압축 활성화")] = False,
+    force_react: Annotated[bool, typer.Option("--force-react", help="3-tier 자동 라우팅 우회, 항상 ReAct 모드 사용")] = False,
 ):
     """
     AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다.
@@ -475,6 +479,7 @@ def run(
             "model_preference": model_pref,
             "system_prompts": prompt_contents,
             "persona": persona,
+            "force_react": force_react,
         }
         endpoint = "/agent/decide_and_act"
     else:
@@ -497,6 +502,7 @@ def run(
             "model_preference": model_pref,
             "system_prompts": prompt_contents,
             "persona": persona,
+            "force_react": force_react,
         }
         endpoint = "/agent/decide_and_act"
 

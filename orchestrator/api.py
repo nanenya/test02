@@ -5,7 +5,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from .models import AgentRequest, AgentResponse, ExecutionGroup
+from .models import AgentRequest, AgentResponse, ExecutionGroup, WisdomEntry, PlanValidation
 from .llm_client import (
     generate_execution_plan,
     generate_final_answer,
@@ -13,23 +13,13 @@ from .llm_client import (
     extract_keywords,
     detect_topic_split,
     classify_intent,
+    extract_wisdom,
+    validate_execution_plan,
+    classify_task_category,
+    _get_model_for_category,
 )
+from .constants import PLAN_VALIDATION_MIN_SCORE
 
-# P3-B: 역할별 시스템 프롬프트
-_ROLE_PROMPTS = {
-    "planner": (
-        "당신은 계획 수립 전문가(Planner)입니다. "
-        "주어진 작업을 명확하고 실행 가능한 단계별 계획으로 분해하세요. "
-        "병렬 실행 가능한 단계는 같은 그룹에 배치하고, "
-        "각 그룹은 독립적으로 완료될 수 있어야 합니다."
-    ),
-    "reviewer": (
-        "당신은 결과 검토 전문가(Reviewer)입니다. "
-        "이전 실행 결과를 면밀히 검토하고, 작업이 완전히 완료되었는지 확인하세요. "
-        "미완료 항목이 있으면 다음 실행 단계를 계획하고, "
-        "모든 작업이 완료되었으면 반드시 빈 계획([])을 반환하세요."
-    ),
-}
 from . import tool_registry
 from . import history_manager
 from . import graph_manager
@@ -56,6 +46,21 @@ def _resp(**kwargs) -> AgentResponse:
     """token_usage를 자동으로 포함한 AgentResponse를 생성합니다."""
     kwargs.setdefault("token_usage", token_tracker.get_accumulated())
     return AgentResponse(**kwargs)
+
+
+def _format_wisdom(entries: list) -> str:
+    """지식 항목을 카테고리별로 포맷팅하여 시스템 프롬프트용 문자열로 반환합니다."""
+    if not entries:
+        return ""
+    by_cat: dict = {}
+    for e in entries:
+        cat = e.get("category", "misc")
+        by_cat.setdefault(cat, []).append(e.get("content", ""))
+    lines = ["[이전 학습 지식 - 참고하여 더 나은 계획 수립]"]
+    for cat, contents in by_cat.items():
+        for c in contents[:3]:  # 카테고리별 최근 3개
+            lines.append(f"  [{cat}] {c}")
+    return "\n".join(lines)
 
 
 def _validate_requirement_path(path: str) -> str:
@@ -205,8 +210,24 @@ async def decide_and_act(request: AgentRequest):
         except Exception as intent_err:
             logging.warning(f"IntentGate 실패, task로 진행: {intent_err}")
 
+        # [D] 복잡도 분류
+        task_cat = await classify_task_category(query)
+
+        # [C] 3-tier 자동 라우팅: ultrabrain이면 pipeline_endpoint로
+        if task_cat == "ultrabrain" and not request.force_react:
+            logging.info(f"[3-tier] 복잡 쿼리 감지 → pipeline_endpoint 라우팅")
+            return await pipeline_endpoint(request)
+
         # P3-B: Planner 역할 프롬프트 주입
-        planner_prompts = [_ROLE_PROMPTS["planner"]] + effective_system_prompts
+        planner_prompts = [agent_config_manager.get_prompt("role_planner")] + effective_system_prompts
+
+        # [B] 지식 로드 및 주입
+        try:
+            wisdom_entries = graph_manager.load_wisdom(convo_id)
+            if wisdom_entries:
+                planner_prompts.append(_format_wisdom(wisdom_entries))
+        except Exception:
+            pass
 
         requirements_content = ""
         if request.requirement_paths:
@@ -230,7 +251,7 @@ async def decide_and_act(request: AgentRequest):
                 system_prompts=planner_prompts,
                 allowed_skills=effective_allowed_skills,
             )
-            
+
             if not plan_list:
                  return _resp(
                     conversation_id=convo_id,
@@ -238,7 +259,45 @@ async def decide_and_act(request: AgentRequest):
                     history=history,
                     message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
                 )
-            
+
+            # [D] 카테고리 → model_preference 자동 적용
+            for group in plan_list:
+                if group.category:
+                    mp = _get_model_for_category(group.category)
+                    for task in group.tasks:
+                        if task.model_preference == "auto":
+                            task.model_preference = mp
+
+            # [E] 계획 검증 게이트
+            try:
+                available = list(tool_registry.get_all_tool_descriptions().keys())
+                validation = await validate_execution_plan(plan_list, available)
+                if not validation.valid:
+                    logging.warning(f"[E-PlanGate] score={validation.score:.2f}: {validation.issues}")
+                    history.append(
+                        f"[계획 검증 실패 score={validation.score:.2f}]: {'; '.join(validation.issues)}"
+                        f" → 개선 필요: {'; '.join(validation.suggestions)}"
+                    )
+                    # 한 번 재계획 시도
+                    plan_list = await generate_execution_plan(
+                        user_query=query,
+                        requirements_content=requirements_content,
+                        history=history,
+                        model_preference=request.model_preference,
+                        system_prompts=planner_prompts,
+                        allowed_skills=effective_allowed_skills,
+                    )
+            except Exception as val_e:
+                logging.debug(f"[E-PlanGate] 검증 생략: {val_e}")
+
+            if not plan_list:
+                return _resp(
+                    conversation_id=convo_id,
+                    status="FINAL_ANSWER",
+                    history=history,
+                    message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
+                )
+
             history = _prune_history(history)
             plan_dicts = [group.model_dump() for group in plan_list]
             history_manager.save_conversation(
@@ -275,7 +334,15 @@ async def decide_and_act(request: AgentRequest):
             first_query = _extract_first_query(history)
 
             # P3-B: Reviewer 역할 프롬프트 주입 (재계획 단계)
-            reviewer_prompts = [_ROLE_PROMPTS["reviewer"]] + effective_system_prompts
+            reviewer_prompts = [agent_config_manager.get_prompt("role_reviewer")] + effective_system_prompts
+
+            # [B] 지식 로드 및 주입
+            try:
+                wisdom_entries = graph_manager.load_wisdom(convo_id)
+                if wisdom_entries:
+                    reviewer_prompts.append(_format_wisdom(wisdom_entries))
+            except Exception:
+                pass
 
             plan_list = await generate_execution_plan(
                 user_query=first_query,
@@ -285,7 +352,38 @@ async def decide_and_act(request: AgentRequest):
                 system_prompts=reviewer_prompts,
                 allowed_skills=effective_allowed_skills,
             )
-            
+
+            # [D] 카테고리 → model_preference 자동 적용
+            if plan_list:
+                for group in plan_list:
+                    if group.category:
+                        mp = _get_model_for_category(group.category)
+                        for task in group.tasks:
+                            if task.model_preference == "auto":
+                                task.model_preference = mp
+
+            # [E] 계획 검증 게이트
+            if plan_list:
+                try:
+                    available = list(tool_registry.get_all_tool_descriptions().keys())
+                    validation = await validate_execution_plan(plan_list, available)
+                    if not validation.valid:
+                        logging.warning(f"[E-PlanGate] score={validation.score:.2f}: {validation.issues}")
+                        history.append(
+                            f"[계획 검증 실패 score={validation.score:.2f}]: {'; '.join(validation.issues)}"
+                            f" → 개선 필요: {'; '.join(validation.suggestions)}"
+                        )
+                        plan_list = await generate_execution_plan(
+                            user_query=first_query,
+                            requirements_content="",
+                            history=history,
+                            model_preference=request.model_preference,
+                            system_prompts=reviewer_prompts,
+                            allowed_skills=effective_allowed_skills,
+                        )
+                except Exception as val_e:
+                    logging.debug(f"[E-PlanGate] 검증 생략: {val_e}")
+
             if not plan_list:
                 final_answer = await generate_final_answer(history, request.model_preference)
                 history.append(f"최종 답변: {final_answer}")
@@ -355,8 +453,8 @@ async def decide_and_act(request: AgentRequest):
 @app.post("/agent/execute_group", response_model=AgentResponse)
 async def execute_group(request: AgentRequest):
     """
-    (수정) 저장된 '단일' 그룹을 실행합니다.
-    (수정) 완료 후 'STEP_EXECUTED'를 반환하여 Re-plan을 트리거합니다.
+    저장된 그룹을 실행합니다. can_parallel=True 그룹은 병렬 실행 [A].
+    완료 후 'STEP_EXECUTED'를 반환하여 Re-plan을 트리거합니다.
     """
     token_tracker.begin_tracking()
 
@@ -372,21 +470,8 @@ async def execute_group(request: AgentRequest):
         raise HTTPException(status_code=400, detail="실행할 계획이 없습니다.")
 
     plan_list = [ExecutionGroup(**group) for group in plan_dicts]
-    group_to_execute = plan_list[0] 
-    
-    history.append(f"그룹 실행 시작: [{group_to_execute.group_id}] {group_to_execute.description}")
 
-    session_id = None
-    overall_success = True
-    try:
-        session_id = mcp_db_manager.start_session(
-            conversation_id=convo_id,
-            group_id=group_to_execute.group_id,
-        )
-    except Exception as e:
-        logging.warning(f"mcp_db_manager.start_session 실패: {e}")
-
-    async def _execute_single_task(task) -> tuple:
+    async def _execute_single_task(task, session_id) -> tuple:
         """단일 태스크를 실행하고 (tool_name, result_str, exc | None) 튜플을 반환."""
         # P3-D: on-demand MCP 서버 지연 연결
         await tool_registry.ensure_tool_server_connected(task.tool_name)
@@ -436,93 +521,124 @@ async def execute_group(request: AgentRequest):
                 logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
             return task.tool_name, "", tool_err
 
-    try:
-        # P3-A: 그룹 내 태스크를 asyncio.gather로 병렬 실행
-        tasks = group_to_execute.tasks
-        for task in tasks:
+    async def _run_single_group(grp: ExecutionGroup) -> tuple:
+        """단일 그룹의 모든 태스크를 실행합니다. (success: bool, exc: Exception|None) 반환."""
+        sess_id = None
+        try:
+            sess_id = mcp_db_manager.start_session(
+                conversation_id=convo_id, group_id=grp.group_id
+            )
+        except Exception as e:
+            logging.warning(f"mcp_db_manager.start_session 실패: {e}")
+
+        history.append(f"그룹 실행 시작: [{grp.group_id}] {grp.description}")
+        for task in grp.tasks:
             history.append(f"  - 도구 실행: {task.tool_name} (인자: {task.arguments})")
 
-        results = await asyncio.gather(
-            *[_execute_single_task(task) for task in tasks],
+        try:
+            # P3-A: 그룹 내 태스크를 asyncio.gather로 병렬 실행
+            results = await asyncio.gather(
+                *[_execute_single_task(task, sess_id) for task in grp.tasks],
+                return_exceptions=True,
+            )
+            first_exc = None
+            for tool_name, result_str, exc in results:
+                if exc is not None:
+                    first_exc = exc
+                    history.append(f"  - 실행 오류 ({tool_name}): {exc}")
+                else:
+                    history.append(f"  - 실행 결과 ({tool_name}): {result_str}")
+
+            if first_exc is not None:
+                try:
+                    if sess_id:
+                        mcp_db_manager.end_session(sess_id, overall_success=False)
+                except Exception:
+                    pass
+                return False, first_exc
+
+            history.append(f"그룹 실행 완료: [{grp.group_id}]")
+            try:
+                if sess_id:
+                    mcp_db_manager.end_session(sess_id, overall_success=True)
+            except Exception as end_err:
+                logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
+            return True, None
+
+        except Exception as e:
+            try:
+                if sess_id:
+                    mcp_db_manager.end_session(sess_id, overall_success=False)
+            except Exception:
+                pass
+            return False, e
+
+    # [A] 병렬/직렬 그룹 분리
+    parallel_groups = [g for g in plan_list if g.can_parallel]
+    serial_groups = [g for g in plan_list if not g.can_parallel]
+
+    overall_error = None
+    failed_group_id = None
+
+    # 병렬 그룹 동시 실행
+    if parallel_groups:
+        par_results = await asyncio.gather(
+            *[_run_single_group(g) for g in parallel_groups],
             return_exceptions=True,
         )
+        for i, r in enumerate(par_results):
+            if isinstance(r, Exception):
+                logging.error(f"[A-Parallel] group {parallel_groups[i].group_id} 실패: {r}")
+            elif isinstance(r, tuple) and not r[0]:
+                logging.warning(f"[A-Parallel] group {parallel_groups[i].group_id} 실패: {r[1]}")
 
-        first_exc = None
-        for tool_name, result_str, exc in results:
-            if isinstance(exc, Exception) or (isinstance(exc, BaseException) and exc is not None):
-                first_exc = exc
-                history.append(f"  - 실행 오류 ({tool_name}): {exc}")
-            elif exc is not None:
-                first_exc = exc
-                history.append(f"  - 실행 오류 ({tool_name}): {exc}")
-            else:
-                history.append(f"  - 실행 결과 ({tool_name}): {result_str}")
+    # 직렬 그룹 순차 실행
+    for grp in serial_groups:
+        success, exc = await _run_single_group(grp)
+        if not success:
+            overall_error = exc
+            failed_group_id = grp.group_id
+            break
 
-        if first_exc is not None:
-            raise first_exc
-
-        history.append(f"그룹 실행 완료: [{group_to_execute.group_id}]")
-
-        history_manager.save_conversation(
-            convo_id, history, data.get("title", "실행 중"), [], 0,
-            is_final=False
-        )
-
-    except ValueError as e:
-        # ValueError는 _validate_tool_arguments / 도구 미발견 등 의도된 검증 실패.
-        # 클라이언트에 ERROR 응답을 반환하는 정상 흐름이므로 issue_tracker에 기록하지 않음.
-        logging.warning(f"execute_group 검증 오류 [{group_to_execute.group_id}]: {e}")
-        overall_success = False
-        history.append(f"그룹 실행 중 오류 발생: {e}")
-        history_manager.save_conversation(
-            convo_id, history, "실행 오류", plan_dicts, 0,
-            is_final=False
-        )
-        try:
-            if session_id:
-                mcp_db_manager.end_session(session_id, overall_success=False)
-        except Exception as end_err:
-            logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
+    if overall_error is not None:
+        is_validation_err = isinstance(overall_error, ValueError)
+        if is_validation_err:
+            logging.warning(f"execute_group 검증 오류 [{failed_group_id}]: {overall_error}")
+        else:
+            issue_tracker.capture_exception(
+                overall_error, context=f"execute_group group_id={failed_group_id}", source="tool"
+            )
+        history.append(f"그룹 실행 중 오류 발생: {overall_error}")
+        history_manager.save_conversation(convo_id, history, "실행 오류", plan_dicts, 0, is_final=False)
         return _resp(
             conversation_id=convo_id,
             status="ERROR",
             history=history,
-            message=f"그룹 '{group_to_execute.group_id}' 실행 중 오류: {e}",
-        )
-    except Exception as e:
-        # 예기치 않은 도구 실행 오류만 issue_tracker에 기록
-        issue_tracker.capture_exception(
-            e, context=f"execute_group group_id={group_to_execute.group_id}", source="tool"
-        )
-        overall_success = False
-        history.append(f"그룹 실행 중 오류 발생: {e}")
-        history_manager.save_conversation(
-            convo_id, history, "실행 오류", plan_dicts, 0,
-            is_final=False
-        )
-        try:
-            if session_id:
-                mcp_db_manager.end_session(session_id, overall_success=False)
-        except Exception as end_err:
-            logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
-        return _resp(
-            conversation_id=convo_id,
-            status="ERROR",
-            history=history,
-            message=f"그룹 '{group_to_execute.group_id}' 실행 중 오류: {e}",
+            message=f"그룹 '{failed_group_id}' 실행 중 오류: {overall_error}",
         )
 
+    history_manager.save_conversation(
+        convo_id, history, data.get("title", "실행 중"), [], 0, is_final=False
+    )
+
+    # [B] 실행 결과에서 지식 추출 (백그라운드식, 실패 무시)
     try:
-        if session_id:
-            mcp_db_manager.end_session(session_id, overall_success=True)
-    except Exception as end_err:
-        logging.warning(f"mcp_db_manager.end_session 실패: {end_err}")
+        result_lines = [h for h in history[-20:] if "실행 결과" in h]
+        ctx = history[0] if history else ""
+        wisdom = await extract_wisdom(result_lines, ctx)
+        if wisdom:
+            graph_manager.save_wisdom(convo_id, wisdom)
+            executed_ids = [g.group_id for g in plan_list]
+            logging.info(f"[B-Wisdom] {len(wisdom)}개 지식 저장 (그룹: {executed_ids})")
+    except Exception as we:
+        logging.debug(f"[B-Wisdom] 추출 실패 (무시): {we}")
 
+    executed_count = len(parallel_groups) + len(serial_groups)
     return _resp(
         conversation_id=convo_id,
         status="STEP_EXECUTED",
         history=history,
-        message=f"그룹 [{group_to_execute.group_id}] 실행 완료"
+        message=f"그룹 실행 완료 ({executed_count}개 그룹)"
     )
 
 
