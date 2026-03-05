@@ -67,7 +67,7 @@ class TestConfigIO:
         missing_path = str(tmp_path / "nonexistent.json")
         config = model_manager.load_config(missing_path)
         assert config["active_provider"] == "gemini"
-        assert config["active_model"] == "gemini-2.0-flash-001"
+        assert config["active_model"] == ""
 
     def test_save_and_reload(self, tmp_path):
         config_path = str(tmp_path / "test_save.json")

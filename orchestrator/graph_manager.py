@@ -43,6 +43,28 @@ def get_db(path: Path = DB_PATH):
         conn.close()
 
 
+def _init_fts5(conn) -> None:
+    """wisdom FTS5 가상 테이블 + INSERT/DELETE 트리거 생성."""
+    # SQLite FTS5 지원 여부 확인
+    try:
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS session_wisdom_fts USING fts5("
+            "content, category, source_tool, content='session_wisdom', content_rowid='id')"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS wisdom_ai AFTER INSERT ON session_wisdom BEGIN "
+            "INSERT INTO session_wisdom_fts(rowid, content, category, source_tool) "
+            "VALUES (new.id, new.content, new.category, new.source_tool); END"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS wisdom_ad AFTER DELETE ON session_wisdom BEGIN "
+            "INSERT INTO session_wisdom_fts(session_wisdom_fts, rowid, content, category, source_tool) "
+            "VALUES ('delete', old.id, old.content, old.category, old.source_tool); END"
+        )
+    except Exception as e:
+        logging.debug(f"FTS5 초기화 실패 (무시): {e}")
+
+
 def init_db(path: Path = DB_PATH) -> None:
     """모든 테이블을 IF NOT EXISTS로 생성."""
     with get_db(path) as conn:
@@ -137,7 +159,21 @@ def init_db(path: Path = DB_PATH) -> None:
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_wisdom_convo ON session_wisdom(conversation_id);
+
+        CREATE TABLE IF NOT EXISTS scheduled_tasks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            query       TEXT    NOT NULL,
+            cron_expr   TEXT    NOT NULL,
+            convo_id    TEXT    DEFAULT '',
+            enabled     INTEGER NOT NULL DEFAULT 1,
+            last_run_at TEXT    DEFAULT '',
+            next_run_at TEXT    DEFAULT '',
+            run_count   INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL
+        );
         """)
+        _init_fts5(conn)
 
 
 # ── 자동 초기화 ──────────────────────────────────────────────────
@@ -485,9 +521,12 @@ def get_or_create_keyword(name: str, db_path: Path = DB_PATH) -> int:
 def assign_keywords_to_conversation(
     convo_id: str, keyword_names: List[str], db_path: Path = DB_PATH
 ) -> None:
-    for name in keyword_names:
-        kid = get_or_create_keyword(name, db_path)
-        with get_db(db_path) as conn:
+    with get_db(db_path) as conn:
+        for name in keyword_names:
+            row = conn.execute("SELECT id FROM keywords WHERE name=?", (name,)).fetchone()
+            kid = row["id"] if row else conn.execute(
+                "INSERT INTO keywords (name) VALUES (?)", (name,)
+            ).lastrowid
             conn.execute(
                 "INSERT OR IGNORE INTO conversation_keywords "
                 "(conversation_id, keyword_id) VALUES (?, ?)",
@@ -593,6 +632,17 @@ def get_linked_conversations(
 
 # ── 대화 분리 ────────────────────────────────────────────────────
 
+def _copy_metadata(conn, src_id: str, dst_id: str, table: str, col: str) -> None:
+    """src 대화의 메타데이터(그룹/토픽/키워드)를 dst로 복사합니다."""
+    for row in conn.execute(
+        f"SELECT {col} FROM {table} WHERE conversation_id=?", (src_id,)
+    ).fetchall():
+        conn.execute(
+            f"INSERT OR IGNORE INTO {table} (conversation_id, {col}) VALUES (?, ?)",
+            (dst_id, row[col]),
+        )
+
+
 def split_conversation(
     original_id: str,
     split_point_index: int,
@@ -640,36 +690,10 @@ def split_conversation(
                 "active",
             ),
         )
-        # 그룹 복사
-        for row in conn.execute(
-            "SELECT group_id FROM conversation_groups WHERE conversation_id=?",
-            (original_id,),
-        ).fetchall():
-            conn.execute(
-                "INSERT OR IGNORE INTO conversation_groups "
-                "(conversation_id, group_id) VALUES (?, ?)",
-                (new_id, row["group_id"]),
-            )
-        # 토픽 복사
-        for row in conn.execute(
-            "SELECT topic_id FROM conversation_topics WHERE conversation_id=?",
-            (original_id,),
-        ).fetchall():
-            conn.execute(
-                "INSERT OR IGNORE INTO conversation_topics "
-                "(conversation_id, topic_id) VALUES (?, ?)",
-                (new_id, row["topic_id"]),
-            )
-        # 키워드 복사
-        for row in conn.execute(
-            "SELECT keyword_id FROM conversation_keywords WHERE conversation_id=?",
-            (original_id,),
-        ).fetchall():
-            conn.execute(
-                "INSERT OR IGNORE INTO conversation_keywords "
-                "(conversation_id, keyword_id) VALUES (?, ?)",
-                (new_id, row["keyword_id"]),
-            )
+        # 그룹/토픽/키워드 복사
+        _copy_metadata(conn, original_id, new_id, "conversation_groups", "group_id")
+        _copy_metadata(conn, original_id, new_id, "conversation_topics", "topic_id")
+        _copy_metadata(conn, original_id, new_id, "conversation_keywords", "keyword_id")
         # split_from 링크
         conn.execute(
             "INSERT OR IGNORE INTO conversation_links "
@@ -682,6 +706,71 @@ def split_conversation(
 
 # ── 그래프 뷰 ────────────────────────────────────────────────────
 
+def _build_conversation_nodes(conn, convs: list) -> list:
+    """대화 목록을 노드 리스트로 변환합니다."""
+    return [
+        {"type": "conversation", "id": c["id"], "label": c["title"][:30]}
+        for c in convs
+    ]
+
+
+def _build_group_edges(conn, convo_ids: list) -> tuple:
+    """그룹 노드와 대화-그룹 엣지를 반환합니다."""
+    nodes: List[Dict] = []
+    edges: List[Dict] = []
+    for g in conn.execute("SELECT id, name FROM groups").fetchall():
+        nodes.append({"type": "group", "id": f"g_{g['id']}", "label": g["name"]})
+        for r in conn.execute(
+            "SELECT conversation_id FROM conversation_groups WHERE group_id=?",
+            (g["id"],),
+        ).fetchall():
+            if r["conversation_id"] in convo_ids:
+                edges.append({"from": f"g_{g['id']}", "to": r["conversation_id"], "type": "group"})
+    return nodes, edges
+
+
+def _build_topic_edges(conn, convo_ids: list) -> tuple:
+    """토픽 노드와 대화-토픽 엣지, 토픽 간 링크 엣지를 반환합니다."""
+    nodes: List[Dict] = []
+    edges: List[Dict] = []
+    for t in conn.execute("SELECT id, name FROM topics").fetchall():
+        nodes.append({"type": "topic", "id": f"t_{t['id']}", "label": t["name"]})
+        for r in conn.execute(
+            "SELECT conversation_id FROM conversation_topics WHERE topic_id=?",
+            (t["id"],),
+        ).fetchall():
+            if r["conversation_id"] in convo_ids:
+                edges.append({"from": f"t_{t['id']}", "to": r["conversation_id"], "type": "topic"})
+        for lnk in conn.execute(
+            "SELECT topic_id_b, relation FROM topic_links WHERE topic_id_a=?",
+            (t["id"],),
+        ).fetchall():
+            edges.append({
+                "from": f"t_{t['id']}",
+                "to": f"t_{lnk['topic_id_b']}",
+                "type": "topic_link",
+                "relation": lnk["relation"],
+            })
+    return nodes, edges
+
+
+def _build_keyword_edges(conn, convo_ids: list) -> tuple:
+    """키워드 노드와 대화-키워드 엣지를 반환합니다."""
+    nodes: List[Dict] = []
+    edges: List[Dict] = []
+    for kw in conn.execute("SELECT id, name FROM keywords").fetchall():
+        used = conn.execute(
+            "SELECT conversation_id FROM conversation_keywords WHERE keyword_id=?",
+            (kw["id"],),
+        ).fetchall()
+        refs = [r["conversation_id"] for r in used if r["conversation_id"] in convo_ids]
+        if refs:
+            nodes.append({"type": "keyword", "id": f"k_{kw['id']}", "label": kw["name"]})
+            for cid in refs:
+                edges.append({"from": f"k_{kw['id']}", "to": cid, "type": "keyword"})
+    return nodes, edges
+
+
 def get_graph_data(
     center_id: Optional[str] = None,
     depth: int = 2,
@@ -692,7 +781,6 @@ def get_graph_data(
     edges: List[Dict] = []
 
     with get_db(db_path) as conn:
-        # 대화 노드
         if center_id:
             convos = conn.execute(
                 "SELECT id, title, status FROM conversations WHERE id=?",
@@ -705,74 +793,19 @@ def get_graph_data(
             ).fetchall()
 
         convo_ids = [c["id"] for c in convos]
-        for c in convos:
-            nodes.append(
-                {"type": "conversation", "id": c["id"], "label": c["title"][:30]}
-            )
+        nodes.extend(_build_conversation_nodes(conn, convos))
 
-        # 그룹 노드/엣지
-        for g in conn.execute("SELECT id, name FROM groups").fetchall():
-            nodes.append(
-                {"type": "group", "id": f"g_{g['id']}", "label": g["name"]}
-            )
-            for r in conn.execute(
-                "SELECT conversation_id FROM conversation_groups WHERE group_id=?",
-                (g["id"],),
-            ).fetchall():
-                if r["conversation_id"] in convo_ids:
-                    edges.append(
-                        {
-                            "from": f"g_{g['id']}",
-                            "to": r["conversation_id"],
-                            "type": "group",
-                        }
-                    )
+        g_nodes, g_edges = _build_group_edges(conn, convo_ids)
+        nodes.extend(g_nodes)
+        edges.extend(g_edges)
 
-        # 토픽 노드/엣지
-        for t in conn.execute("SELECT id, name FROM topics").fetchall():
-            nodes.append(
-                {"type": "topic", "id": f"t_{t['id']}", "label": t["name"]}
-            )
-            for r in conn.execute(
-                "SELECT conversation_id FROM conversation_topics WHERE topic_id=?",
-                (t["id"],),
-            ).fetchall():
-                if r["conversation_id"] in convo_ids:
-                    edges.append(
-                        {
-                            "from": f"t_{t['id']}",
-                            "to": r["conversation_id"],
-                            "type": "topic",
-                        }
-                    )
-            for lnk in conn.execute(
-                "SELECT topic_id_b, relation FROM topic_links WHERE topic_id_a=?",
-                (t["id"],),
-            ).fetchall():
-                edges.append(
-                    {
-                        "from": f"t_{t['id']}",
-                        "to": f"t_{lnk['topic_id_b']}",
-                        "type": "topic_link",
-                        "relation": lnk["relation"],
-                    }
-                )
+        t_nodes, t_edges = _build_topic_edges(conn, convo_ids)
+        nodes.extend(t_nodes)
+        edges.extend(t_edges)
 
-        # 키워드 노드/엣지
-        for kw in conn.execute("SELECT id, name FROM keywords").fetchall():
-            used = conn.execute(
-                "SELECT conversation_id FROM conversation_keywords WHERE keyword_id=?",
-                (kw["id"],),
-            ).fetchall()
-            refs = [r["conversation_id"] for r in used if r["conversation_id"] in convo_ids]
-            if refs:
-                nodes.append(
-                    {"type": "keyword", "id": f"k_{kw['id']}", "label": kw["name"]}
-                )
-                for cid in refs:
-                    edges.append(
-                        {"from": f"k_{kw['id']}", "to": cid, "type": "keyword"}
-                    )
+        k_nodes, k_edges = _build_keyword_edges(conn, convo_ids)
+        nodes.extend(k_nodes)
+        edges.extend(k_edges)
 
         # 대화 간 링크
         for cid in convo_ids:
@@ -780,9 +813,7 @@ def get_graph_data(
                 "SELECT convo_id_b, link_type FROM conversation_links WHERE convo_id_a=?",
                 (cid,),
             ).fetchall():
-                edges.append(
-                    {"from": cid, "to": lnk["convo_id_b"], "type": lnk["link_type"]}
-                )
+                edges.append({"from": cid, "to": lnk["convo_id_b"], "type": lnk["link_type"]})
 
     return {"nodes": nodes, "edges": edges}
 
@@ -922,12 +953,17 @@ def save_wisdom(
 def load_wisdom(
     convo_id: str,
     limit: int = 50,
+    query: Optional[str] = None,
     db_path: Path = DB_PATH,
 ) -> List[dict]:
     """대화에 저장된 지식 항목을 반환합니다 (최신순).
 
+    query가 있으면 FTS 검색, 없으면 최신순 반환.
     Returns: [{category, content, source_tool, created_at}, ...]
     """
+    if query:
+        return search_wisdom_fts(query, convo_id=convo_id, limit=limit, db_path=db_path)
+
     with get_db(db_path) as conn:
         rows = conn.execute(
             """
@@ -940,3 +976,149 @@ def load_wisdom(
             (convo_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def search_wisdom_fts(
+    query: str,
+    convo_id: Optional[str] = None,
+    limit: int = 10,
+    db_path: Path = DB_PATH,
+) -> List[dict]:
+    """FTS5로 wisdom 전문 검색.
+
+    Returns: [{category, content, source_tool, created_at, conversation_id}, ...]
+    """
+    with get_db(db_path) as conn:
+        try:
+            if convo_id:
+                rows = conn.execute(
+                    """
+                    SELECT sw.conversation_id, sw.category, sw.content,
+                           sw.source_tool, sw.created_at
+                    FROM session_wisdom_fts fts
+                    JOIN session_wisdom sw ON sw.id = fts.rowid
+                    WHERE fts.session_wisdom_fts MATCH ?
+                      AND sw.conversation_id = ?
+                    ORDER BY sw.created_at DESC
+                    LIMIT ?
+                    """,
+                    (query, convo_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT sw.conversation_id, sw.category, sw.content,
+                           sw.source_tool, sw.created_at
+                    FROM session_wisdom_fts fts
+                    JOIN session_wisdom sw ON sw.id = fts.rowid
+                    WHERE fts.session_wisdom_fts MATCH ?
+                    ORDER BY sw.created_at DESC
+                    LIMIT ?
+                    """,
+                    (query, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logging.warning(f"FTS 검색 실패, 일반 검색으로 폴백: {e}")
+            # FTS 실패 시 LIKE 폴백
+            pattern = f"%{query}%"
+            if convo_id:
+                rows = conn.execute(
+                    """
+                    SELECT conversation_id, category, content, source_tool, created_at
+                    FROM session_wisdom
+                    WHERE (content LIKE ? OR category LIKE ?)
+                      AND conversation_id = ?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (pattern, pattern, convo_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT conversation_id, category, content, source_tool, created_at
+                    FROM session_wisdom
+                    WHERE content LIKE ? OR category LIKE ?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (pattern, pattern, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+
+# ── 스케줄 태스크 CRUD ────────────────────────────────────────────
+
+def add_scheduled_task(
+    name: str,
+    query: str,
+    cron_expr: str,
+    convo_id: str = "",
+    db_path: Path = DB_PATH,
+) -> int:
+    """스케줄 태스크를 추가하고 id를 반환."""
+    now = utcnow()
+    with get_db(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO scheduled_tasks
+                (name, query, cron_expr, convo_id, enabled, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (name, query, cron_expr, convo_id, now),
+        )
+        return cur.lastrowid
+
+
+def list_scheduled_tasks(db_path: Path = DB_PATH) -> List[dict]:
+    """모든 스케줄 태스크 목록 반환."""
+    with get_db(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM scheduled_tasks ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_scheduled_task(task_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
+    """ID로 스케줄 태스크 조회."""
+    with get_db(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_tasks WHERE id=?", (task_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def remove_scheduled_task(task_id: int, db_path: Path = DB_PATH) -> bool:
+    """스케줄 태스크 삭제. 성공 여부 반환."""
+    with get_db(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM scheduled_tasks WHERE id=?", (task_id,)
+        )
+        return cur.rowcount > 0
+
+
+def toggle_scheduled_task(task_id: int, enabled: bool, db_path: Path = DB_PATH) -> bool:
+    """스케줄 태스크 활성화/비활성화. 성공 여부 반환."""
+    with get_db(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE scheduled_tasks SET enabled=? WHERE id=?",
+            (1 if enabled else 0, task_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_scheduled_task_run(
+    task_id: int,
+    next_run_at: str = "",
+    db_path: Path = DB_PATH,
+) -> None:
+    """태스크 실행 후 last_run_at/run_count/next_run_at 갱신."""
+    now = utcnow()
+    with get_db(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE scheduled_tasks
+            SET last_run_at=?, run_count=run_count+1, next_run_at=?
+            WHERE id=?
+            """,
+            (now, next_run_at, task_id),
+        )

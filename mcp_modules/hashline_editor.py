@@ -11,9 +11,26 @@ OMO(Oh My OpenCode) 알고리즘 포팅:
 """
 
 import json
+import os
 import re
 import zlib
+from pathlib import Path
 from typing import Optional
+
+MAX_HASHLINE_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_HASHLINE_EDITS_PER_CALL = 50
+
+
+def _atomic_write(path: str, lines: list) -> None:
+    """원자적 파일 쓰기: 임시 파일 생성 후 os.replace()로 교체."""
+    p = Path(path)
+    tmp = p.with_suffix(p.suffix + ".hashline_tmp")
+    try:
+        tmp.write_text("".join(lines), encoding="utf-8")
+        os.replace(str(tmp), str(p))
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
 
 # 64자 알파벳: 0-9, A-Z, a-z, +, /  (crc32 % 4096 → 2글자 base-64 인코딩)
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/"
@@ -129,6 +146,11 @@ def hashline_edit(path: str, edits: str) -> str:
 
     해시 불일치 시 편집 없이 오류 메시지와 올바른 해시를 반환합니다.
     """
+    # 파일 크기 제한
+    file_size = os.path.getsize(path)
+    if file_size > MAX_HASHLINE_FILE_SIZE:
+        return f"ERROR: 파일 크기 초과 ({file_size // 1024 // 1024}MB > 10MB)"
+
     with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -139,6 +161,10 @@ def hashline_edit(path: str, edits: str) -> str:
 
     if not isinstance(edit_list, list):
         raise ValueError("edits는 JSON 배열이어야 합니다")
+
+    # 편집 수 제한
+    if len(edit_list) > MAX_HASHLINE_EDITS_PER_CALL:
+        return f"ERROR: 편집 수 초과 ({len(edit_list)} > {MAX_HASHLINE_EDITS_PER_CALL})"
 
     # ── 전체 해시 검증 먼저 (fail-fast) ───────────────────────────────────────
     errors = []
@@ -191,8 +217,7 @@ def hashline_edit(path: str, edits: str) -> str:
         else:
             raise ValueError(f"알 수 없는 op: {op!r}")
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+    _atomic_write(path, lines)
 
     return f"적용 완료 {len(applied)}개 편집:\n" + "\n".join(
         f"  - {a}" for a in applied

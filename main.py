@@ -3,6 +3,7 @@
 # main.py
 import asyncio
 import json
+import re as _re
 import typer
 import httpx
 import uvicorn
@@ -57,6 +58,8 @@ template_app = typer.Typer(help="실행 템플릿 관리 명령어")
 app.add_typer(template_app, name="template")
 gap_app = typer.Typer(help="도구 부재 이력 조회")
 app.add_typer(gap_app, name="gap")
+provider_app = typer.Typer(help="LLM 프로바이더 상태 관리")
+app.add_typer(provider_app, name="provider")
 
 console = Console()
 
@@ -194,6 +197,49 @@ def _check_dangerous_tools(execution_group: dict) -> List[str]:
         task.get("tool_name", "")
         for task in execution_group.get("tasks", [])
         if task.get("tool_name", "").lower() in _DANGEROUS_TOOLS
+    ]
+
+
+_SENSITIVE_PATTERN = _re.compile(
+    r'(?i)('
+    r'password\s*[=:]\s*\S+|'
+    r'passwd\s*[=:]\s*\S+|'
+    r'api[_-]?key\s*[=:]\s*\S+|'
+    r'secret[_-]?key\s*[=:]\s*\S+|'
+    r'access[_-]?token\s*[=:]\s*\S+|'
+    r'auth[_-]?token\s*[=:]\s*\S+|'
+    r'AKIA[0-9A-Z]{16}|'
+    r'sk-[A-Za-z0-9]{40,}|'
+    r'ghp_[A-Za-z0-9]{36}|'
+    r'-----BEGIN .* PRIVATE KEY-----'
+    r')'
+)
+
+_SECURITY_CONTEXT_TOOLS: frozenset = frozenset({
+    "git_push", "git_force_push", "git_commit",
+    "network_request", "http_post", "http_put",
+    "send_email", "send_message",
+    "upload_file", "ftp_upload",
+    "execute_script", "run_python",
+})
+
+
+def _check_sensitive_data(execution_group: dict) -> List[str]:
+    """실행 그룹 인자에서 민감 데이터 패턴을 탐지합니다. 매칭된 패턴 목록 반환."""
+    try:
+        serialized = json.dumps(execution_group.get("tasks", []))
+    except Exception:
+        return []
+    matches = _SENSITIVE_PATTERN.findall(serialized)
+    return list({m[:20] + "..." for m in matches}) if matches else []
+
+
+def _check_security_context(execution_group: dict) -> List[str]:
+    """보안 컨텍스트 도구를 감지합니다."""
+    return [
+        task.get("tool_name", "")
+        for task in execution_group.get("tasks", [])
+        if task.get("tool_name", "") in _SECURITY_CONTEXT_TOOLS
     ]
 
 
@@ -405,6 +451,8 @@ def run(
     plan: Annotated[bool, typer.Option("--plan", help="Prometheus 모드: 실행 전 요구사항 명확화 질문")] = False,
     summarize: Annotated[bool, typer.Option("--summarize", help="히스토리 임계치 초과 시 LLM 요약 압축 활성화")] = False,
     force_react: Annotated[bool, typer.Option("--force-react", help="3-tier 자동 라우팅 우회, 항상 ReAct 모드 사용")] = False,
+    parallel: Annotated[bool, typer.Option("--parallel", help="병렬 플래닝 모드: 독립 태스크를 한 번에 계획해 동시 실행")] = False,
+    pipeline: Annotated[bool, typer.Option("--pipeline", help="4층 파이프라인 모드 강제 사용 (설계→태스크분해→플랜→실행)")] = False,
 ):
     """
     AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다.
@@ -480,8 +528,11 @@ def run(
             "system_prompts": prompt_contents,
             "persona": persona,
             "force_react": force_react,
+            "parallel_mode": parallel,
         }
-        endpoint = "/agent/decide_and_act"
+        endpoint = "/agent/pipeline" if pipeline else "/agent/decide_and_act"
+        if pipeline:
+            console.print("[bold magenta]🏗️  4층 파이프라인 모드[/bold magenta]")
     else:
         convo_id = continue_id
         data = load_conversation(convo_id)
@@ -503,8 +554,9 @@ def run(
             "system_prompts": prompt_contents,
             "persona": persona,
             "force_react": force_react,
+            "parallel_mode": parallel,
         }
-        endpoint = "/agent/decide_and_act"
+        endpoint = "/agent/pipeline" if pipeline else "/agent/decide_and_act"
 
     # --- 상호작용 루프 ---
     _sess_in = _sess_out = 0
@@ -619,7 +671,7 @@ def run(
                         )
 
                 console.print("[cyan]...다음 단계를 계획합니다...[/cyan]")
-                endpoint = "/agent/decide_and_act"
+                endpoint = "/agent/pipeline" if pipeline else "/agent/decide_and_act"
                 request_data = {
                     "conversation_id": convo_id,
                     "history": history,
@@ -634,17 +686,22 @@ def run(
                     console.print(f"[dim]📊 {_fmt_usage(_usage)}[/dim]")
 
                 if auto:
-                    # 위험 도구 포함 여부 확인
                     exec_group = data.get("execution_group") or {}
                     dangerous = _check_dangerous_tools(exec_group)
+                    sensitive = _check_sensitive_data(exec_group)
+                    security = _check_security_context(exec_group)
+                    needs_confirm = bool(dangerous or sensitive or security)
 
-                    if dangerous and not force:
-                        console.print(
-                            f"\n[bold red]⚠️  위험 도구 감지: {', '.join(dangerous)}[/bold red]"
-                        )
-                        console.print("[dim]--force 플래그를 사용하면 위험 도구도 자동 승인됩니다.[/dim]")
+                    if needs_confirm and not force:
+                        if dangerous:
+                            console.print(f"\n[bold red]⚠️  위험 도구 감지: {', '.join(dangerous)}[/bold red]")
+                        if sensitive:
+                            console.print(f"[bold red]🔐 민감 데이터 패턴 감지: {sensitive}[/bold red]")
+                        if security:
+                            console.print(f"[bold yellow]🔒 보안 컨텍스트 도구: {security}[/bold yellow]")
+                        console.print("[dim]--force 플래그를 사용하면 자동 승인됩니다.[/dim]")
                         action = typer.prompt(
-                            "위험 도구가 포함되어 있습니다. 계속하시겠습니까? [Y/n/edit]",
+                            "계속하시겠습니까? [Y/n/edit]",
                             default="Y",
                         ).lower()
                         if action == "edit":
@@ -661,6 +718,13 @@ def run(
                         elif action not in ["y", "yes", ""]:
                             console.print("[bold red]자동 실행을 중단합니다.[/bold red]")
                             break
+                    elif needs_confirm and force:
+                        if dangerous:
+                            console.print(f"[bold yellow]⚡ --force 자동 승인 (위험 도구: {dangerous})[/bold yellow]")
+                        if sensitive:
+                            console.print(f"[bold yellow]⚡ --force 자동 승인 (민감 데이터 감지)[/bold yellow]")
+                        if security:
+                            console.print(f"[bold yellow]⚡ --force 자동 승인 (보안 컨텍스트: {security})[/bold yellow]")
                     else:
                         step_info = f" (단계 {_step_count + 1}" + (f"/{max_steps}" if max_steps > 0 else "") + ")"
                         console.print(f"[dim cyan]🤖 자동 승인{step_info}[/dim cyan]")
@@ -700,6 +764,50 @@ def run(
                     else:
                         console.print("[bold red]작업을 중단합니다.[/bold red]")
                         break
+
+            elif status == "DESIGN_CONFIRMATION":
+                console.print(f"\n[bold blue]🎨 설계안:[/bold blue]\n{message}")
+                if _usage:
+                    console.print(f"[dim]📊 {_fmt_usage(_usage)}[/dim]")
+
+                # 자율성 정책: --auto 모드에서도 설계는 항상 사용자 확인
+                action = typer.prompt(
+                    "설계를 확인하시겠습니까? [confirm/reject/edit]",
+                    default="confirm",
+                ).lower()
+
+                if action == "reject":
+                    endpoint = "/agent/pipeline"
+                    request_data = {
+                        "conversation_id": convo_id,
+                        "history": history,
+                        "user_input": None,
+                        "model_preference": model_pref,
+                        "system_prompts": prompt_contents,
+                        "pipeline_action": "reject_design",
+                    }
+                elif action == "edit":
+                    new_instruction = typer.prompt("수정 지시사항을 입력하세요")
+                    endpoint = "/agent/pipeline"
+                    request_data = {
+                        "conversation_id": convo_id,
+                        "history": history,
+                        "user_input": new_instruction,
+                        "model_preference": model_pref,
+                        "system_prompts": prompt_contents,
+                        "pipeline_action": "reject_design",
+                    }
+                else:  # confirm
+                    console.print("[cyan]...설계 확인됨. 태스크 분해를 시작합니다...[/cyan]")
+                    endpoint = "/agent/pipeline"
+                    request_data = {
+                        "conversation_id": convo_id,
+                        "history": history,
+                        "user_input": None,
+                        "model_preference": model_pref,
+                        "system_prompts": prompt_contents,
+                        "pipeline_action": "confirm_design",
+                    }
 
             elif status == "ERROR":
                 console.print(f"[bold red]서버 오류: {message}[/bold red]")
@@ -1865,6 +1973,49 @@ def skill_show(
     console.print(f"[bold]설명:[/bold] {s.get('description', '')}")
 
 
+@skill_app.command(name="status")
+def skill_status():
+    """현재 로드된 도구(로컬 + MCP + 온디맨드) 실제 상태 출력."""
+    import httpx as _httpx
+    try:
+        resp = _httpx.get(f"{ORCHESTRATOR_URL}/api/v1/tools/status", timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        console.print(f"[bold red]서버 연결 실패: {e}[/bold red]")
+        console.print("[dim]서버가 실행 중인지 확인하세요: python main.py server[/dim]")
+        raise typer.Exit(code=1)
+
+    console.print(f"\n[bold cyan]도구 로드 상태[/bold cyan]  ({data.get('summary', '')})")
+
+    local = data.get("local", {})
+    loaded = local.get("loaded", [])
+    missing = local.get("modules_missing_file", [])
+    console.print(f"\n[bold]로컬 도구 ({len(loaded)}개 로드됨)[/bold]")
+    for t in sorted(loaded):
+        console.print(f"  ✅ {t}")
+    if missing:
+        console.print(f"\n[bold yellow]파일 없는 모듈 ({len(missing)}개)[/bold yellow]")
+        for m in missing:
+            console.print(f"  ⚠️  {m}")
+
+    mcp = data.get("mcp", {})
+    connected = mcp.get("connected", {})
+    on_demand = mcp.get("on_demand", [])
+    if connected:
+        console.print(f"\n[bold]MCP 연결된 도구[/bold]")
+        for server, tools in connected.items():
+            console.print(f"  [cyan]{server}[/cyan] ({len(tools)}개)")
+            for t in sorted(tools):
+                console.print(f"    ✅ {t}")
+    if on_demand:
+        console.print(f"\n[bold]온디맨드 서버 (미연결)[/bold]")
+        for s in on_demand:
+            console.print(f"  ⏳ {s}")
+
+    console.print(f"\n[bold green]총 {data.get('total', 0)}개 도구 사용 가능[/bold green]")
+
+
 # ── macro 서브커맨드 ──────────────────────────────────────────────
 
 @macro_app.command(name="list")
@@ -2667,6 +2818,31 @@ def gap_discover(
         console.print("  → [dim]python main.py mcp function list[/dim] 에서 검토 후 활성화하세요.")
     else:
         console.print(f"[red]해결 실패: {tool}[/red]")
+
+
+@provider_app.command(name="status")
+def provider_status():
+    """LLM 프로바이더 Circuit Breaker 상태 출력 (차단 중인 프로바이더 및 재시도 시각)."""
+    import httpx as _httpx
+    try:
+        resp = _httpx.get(f"{ORCHESTRATOR_URL}/api/v1/providers/status", timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        console.print(f"[bold red]서버 연결 실패: {e}[/bold red]")
+        raise typer.Exit(code=1)
+
+    console.print("\n[bold cyan]LLM 프로바이더 상태[/bold cyan]")
+    for p, info in sorted(data.items()):
+        in_chain = info.get("in_fallback_chain", False)
+        available = info.get("available", True)
+        reason = info.get("reason", "")
+        chain_tag = "[dim](폴백 체인 포함)[/dim]" if in_chain else "[dim](폴백 체인 미포함)[/dim]"
+        if available:
+            console.print(f"  ✅ [green]{p}[/green] {chain_tag}")
+        else:
+            console.print(f"  ⛔ [red]{p}[/red] {chain_tag}")
+            console.print(f"     [yellow]{reason}[/yellow]")
 
 
 if __name__ == "__main__":

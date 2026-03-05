@@ -3,15 +3,39 @@
 # orchestrator/web_router.py
 """웹 UI용 REST API 라우터 — /api/v1 prefix."""
 
-from typing import Optional
+from typing import Callable, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import graph_manager
 from . import mcp_db_manager
 from . import agent_config_manager
+from . import tool_registry
 
 router = APIRouter(prefix="/api/v1", tags=["web"])
+
+
+def _list_safe(list_fn: Callable) -> list:
+    """예외를 HTTP 500으로 변환하여 목록을 반환합니다."""
+    try:
+        return list_fn()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _delete_resource(
+    delete_fn: Callable[[str], bool],
+    name: str,
+    not_found_msg: str,
+) -> dict:
+    """삭제 실행 후 미존재 시 404, 예외 시 500."""
+    try:
+        deleted = delete_fn(name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail=not_found_msg)
+    return {"ok": True}
 
 
 # ── 요청 바디 모델 ────────────────────────────────────────────────
@@ -50,6 +74,30 @@ class PersonaUpdate(BaseModel):
 
 class SkillToggle(BaseModel):
     active: bool
+
+
+class MacroCreate(BaseModel):
+    name: str
+    template: str
+    description: str = ""
+    variables: Optional[List[str]] = None
+
+
+class MacroUpdate(BaseModel):
+    template: Optional[str] = None
+    description: Optional[str] = None
+    variables: Optional[List[str]] = None
+
+
+class WorkflowCreate(BaseModel):
+    name: str
+    steps: List[Dict]
+    description: str = ""
+
+
+class WorkflowUpdate(BaseModel):
+    steps: Optional[List[Dict]] = None
+    description: Optional[str] = None
 
 
 # ── 대화 관리 ─────────────────────────────────────────────────────
@@ -147,10 +195,7 @@ def get_function(func_name: str):
 
 @router.get("/settings/prompts")
 def list_prompts():
-    try:
-        return agent_config_manager.list_system_prompts()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return _list_safe(agent_config_manager.list_system_prompts)
 
 
 @router.post("/settings/prompts", status_code=201)
@@ -185,23 +230,14 @@ def update_prompt(name: str, body: SystemPromptUpdate):
 
 @router.delete("/settings/prompts/{name}")
 def delete_prompt(name: str):
-    try:
-        deleted = agent_config_manager.delete_system_prompt(name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    if not deleted:
-        raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
-    return {"ok": True}
+    return _delete_resource(agent_config_manager.delete_system_prompt, name, "프롬프트를 찾을 수 없습니다.")
 
 
 # ── 설정 — 스킬 ──────────────────────────────────────────────────
 
 @router.get("/settings/skills")
 def list_skills():
-    try:
-        return agent_config_manager.list_skills(active_only=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return _list_safe(lambda: agent_config_manager.list_skills(active_only=False))
 
 
 @router.post("/settings/skills/{name}/toggle")
@@ -263,28 +299,108 @@ def update_persona(name: str, body: PersonaUpdate):
 
 @router.delete("/settings/personas/{name}")
 def delete_persona(name: str):
-    try:
-        deleted = agent_config_manager.delete_persona(name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    if not deleted:
-        raise HTTPException(status_code=404, detail="페르소나를 찾을 수 없습니다.")
-    return {"ok": True}
+    return _delete_resource(agent_config_manager.delete_persona, name, "페르소나를 찾을 수 없습니다.")
 
 
-# ── 설정 — 매크로 / 워크플로우 (읽기 전용) ───────────────────────
+# ── 설정 — 매크로 CRUD ────────────────────────────────────────────
 
 @router.get("/settings/macros")
 def list_macros():
+    return _list_safe(agent_config_manager.list_macros)
+
+
+@router.post("/settings/macros", status_code=201)
+def create_macro(body: MacroCreate):
     try:
-        return agent_config_manager.list_macros()
+        new_id = agent_config_manager.create_macro(
+            name=body.name,
+            template=body.template,
+            description=body.description,
+            variables=body.variables,
+        )
+        return {"id": new_id, "name": body.name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/settings/macros/{name}")
+def update_macro(name: str, body: MacroUpdate):
+    try:
+        updated = agent_config_manager.update_macro(
+            name=name,
+            template=body.template,
+            description=body.description,
+            variables=body.variables,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=404, detail="매크로를 찾을 수 없습니다.")
+    return {"ok": True}
+
+
+@router.delete("/settings/macros/{name}")
+def delete_macro(name: str):
+    return _delete_resource(agent_config_manager.delete_macro, name, "매크로를 찾을 수 없습니다.")
+
+
+# ── 설정 — 워크플로우 CRUD ────────────────────────────────────────
+
 @router.get("/settings/workflows")
 def list_workflows():
+    return _list_safe(agent_config_manager.list_workflows)
+
+
+@router.post("/settings/workflows", status_code=201)
+def create_workflow(body: WorkflowCreate):
     try:
-        return agent_config_manager.list_workflows()
+        new_id = agent_config_manager.create_workflow(
+            name=body.name,
+            steps=body.steps,
+            description=body.description,
+        )
+        return {"id": new_id, "name": body.name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/settings/workflows/{name}")
+def update_workflow(name: str, body: WorkflowUpdate):
+    try:
+        updated = agent_config_manager.update_workflow(
+            name=name,
+            steps=body.steps,
+            description=body.description,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=404, detail="워크플로우를 찾을 수 없습니다.")
+    return {"ok": True}
+
+
+@router.delete("/settings/workflows/{name}")
+def delete_workflow(name: str):
+    return _delete_resource(agent_config_manager.delete_workflow, name, "워크플로우를 찾을 수 없습니다.")
+
+
+@router.get("/tools/status")
+def get_tools_status():
+    """현재 로드된 도구의 실제 상태를 반환합니다."""
+    try:
+        return tool_registry.get_tool_load_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/providers/status")
+def get_providers_status():
+    """LLM 프로바이더 Circuit Breaker 상태를 반환합니다.
+
+    quota/크레딧 소진으로 차단된 프로바이더와 재시도 예정 시각을 확인합니다.
+    """
+    try:
+        from . import llm_client
+        return llm_client.get_provider_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

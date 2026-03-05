@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 
 from .graph_manager import DB_PATH, get_db
 from .constants import MAX_FUNC_NAMES_PER_SESSION, utcnow
+from . import config as _config
 
 _BASE_DIR = Path(__file__).parent.parent
 MCP_CACHE_DIR = _BASE_DIR / "mcp_cache"
@@ -134,21 +135,48 @@ def register_function(
 
     result: Dict = {"func_name": func_name, "version": new_version, "test_status": "untested"}
 
-    if run_tests and test_code.strip():
-        test_result = run_function_tests(func_name, new_version, db_path)
-        result["test_status"] = test_result["test_status"]
-        result["test_output"] = test_result.get("test_output", "")
-        if test_result["test_status"] == "passed":
-            _activate_function(func_name, new_version, db_path)
-            result["activated"] = True
-        else:
-            result["activated"] = False
+    if test_code.strip():
+        _run_and_activate(func_name, new_version, run_tests, result, db_path)
     else:
-        # 테스트 코드 없음 → 즉시 활성화
         _activate_function(func_name, new_version, db_path)
         result["activated"] = True
 
     return result
+
+
+def add_function(
+    func_name: str,
+    module_group: str,
+    code: str,
+    description: str = "",
+    source_type: str = "auto_generated",
+    source_desc: str = "",
+    db_path=DB_PATH,
+) -> int:
+    """함수를 즉시 활성화하여 DB에 등록하고 row ID를 반환합니다.
+
+    test_code 없이 register_function(run_tests=False)을 호출하므로
+    is_active=1로 즉시 활성화됩니다.
+    """
+    register_function(
+        func_name=func_name,
+        module_group=module_group,
+        code=code,
+        test_code="",
+        description=description,
+        source_type=source_type,
+        source_desc=source_desc,
+        run_tests=False,
+        db_path=db_path,
+    )
+    with get_db(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM mcp_functions WHERE func_name = ? AND is_active = 1",
+            (func_name,),
+        ).fetchone()
+    if not row:
+        raise RuntimeError(f"add_function: 활성화된 행을 찾을 수 없습니다: {func_name}")
+    return row[0]
 
 
 def _activate_function(func_name: str, version: int, db_path=DB_PATH) -> None:
@@ -165,6 +193,24 @@ def _activate_function(func_name: str, version: int, db_path=DB_PATH) -> None:
             (now, func_name, version),
         )
     _invalidate_cache_for_function(func_name, db_path)
+
+
+def _run_and_activate(
+    func_name: str, version: int, run_tests: bool, result: dict, db_path
+) -> None:
+    """테스트 실행 후 합격 시 활성화. result dict 인플레이스 업데이트."""
+    if not run_tests:
+        _activate_function(func_name, version, db_path)
+        result["activated"] = True
+        return
+    test_result = run_function_tests(func_name, version, db_path)
+    result["test_status"] = test_result["test_status"]
+    result["test_output"] = test_result.get("test_output", "")
+    if test_result["test_status"] == "passed":
+        _activate_function(func_name, version, db_path)
+        result["activated"] = True
+    else:
+        result["activated"] = False
 
 
 def _invalidate_cache_for_function(func_name: str, db_path=DB_PATH) -> None:
@@ -312,7 +358,11 @@ def load_module_in_memory(module_group: str, db_path=DB_PATH) -> dict:
         _validate_code_syntax(code, func_name)
         parts.append(code)
 
-    namespace: dict = {}
+    # __file__을 주입하여 preamble에서 Path(__file__).parent 등 경로 계산이 가능하게 함
+    namespace: dict = {
+        "__file__": str(_BASE_DIR / _config.MCP_DIRECTORY / f"{module_group}.py"),
+        "__name__": module_group,
+    }
     exec("\n\n".join(parts), namespace)  # noqa: S102
 
     target_names = {row[0] for row in funcs}
@@ -681,14 +731,7 @@ def update_function_test_code(
         )
 
     result: Dict = {"func_name": func_name, "version": version}
-    if run_tests:
-        test_result = run_function_tests(func_name, version, db_path)
-        result.update(test_result)
-        if test_result["test_status"] == "passed":
-            _activate_function(func_name, version, db_path)
-            result["activated"] = True
-        else:
-            result["activated"] = False
+    _run_and_activate(func_name, version, run_tests, result, db_path)
     return result
 
 

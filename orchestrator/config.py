@@ -23,6 +23,7 @@ LOCAL_MODULES = [
     "git_version_control",
     "web_network_atomic",
     "hashline_editor",
+    "auto_generated",
 ]
 
 # --- 하드코딩 기본값 (fallback용) ---

@@ -7,13 +7,141 @@
 import logging
 import json
 import re
-from typing import Dict, Any, List, Literal, Optional
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Any, List, Literal, Optional, Tuple
 from . import agent_config_manager as _acm
+from ._llm_utils import _extract_json_block
 from .models import WisdomEntry, PlanValidation
+from .constants import (
+    RECENT_HISTORY_ITEMS, MAX_TOOLS_IN_PROMPT, HISTORY_EXCERPT_MAX_CHARS,
+    _DAY_SECONDS, _GEMINI_RATE_LIMIT_SECONDS,
+)
 
 logger = logging.getLogger(__name__)
 
 ModelPreference = Literal["auto", "standard", "high"]
+
+
+# ── Circuit Breaker ───────────────────────────────────────────────────────────
+# {provider: {"until": float(unix_ts), "reason": str}}
+_circuit_breaker: Dict[str, Dict] = {}
+
+
+def _fmt_duration(seconds: float) -> str:
+    """초를 사람이 읽기 쉬운 형식으로 변환."""
+    if seconds < 120:
+        return f"{int(seconds)}초"
+    if seconds < 7200:
+        return f"{int(seconds / 60)}분"
+    return f"{int(seconds / 3600)}시간"
+
+
+def _next_pt_midnight_seconds() -> float:
+    """다음 PT 자정(UTC 변환) 까지 남은 초.
+
+    Gemini 일일 quota 리셋 기준:
+      - PST (11월~3월): UTC 08:00
+      - PDT (3월~11월, DST): UTC 07:00
+    현재 월로 간략 판정. 최소 5분 버퍼 포함.
+    """
+    now = datetime.now(timezone.utc)
+    pt_offset = 7 if 3 <= now.month <= 10 else 8  # DST 간략 판정
+    reset = now.replace(hour=pt_offset, minute=5, second=0, microsecond=0)
+    if now >= reset:
+        reset += timedelta(days=1)
+    return max(300.0, (reset - now).total_seconds())
+
+
+def _detect_circuit_trip(exc: Exception, provider: str) -> Optional[Tuple[float, str]]:
+    """에러 분석 → (스킵 초, 사유) 반환. 해당 없으면 None.
+
+    각 프로바이더별 에러 패턴 및 리셋 정책:
+      Anthropic  400 credit balance   → 자동 리셋 없음, 24시간 스킵
+      Gemini     429 RESOURCE_EXHAUSTED → PT 자정 (UTC 07~08:00) 자동 리셋
+      OpenAI     429 insufficient_quota → 자동 리셋 없음, 24시간 스킵
+      모든 제공자 429 rate limit         → 60초 스킵
+    """
+    try:
+        import httpx
+        body = exc.response.text.lower() if isinstance(exc, httpx.HTTPStatusError) else str(exc).lower()
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+    except Exception:
+        body = str(exc).lower()
+        status = None
+
+    # Anthropic 크레딧 소진
+    if "credit balance is too low" in body:
+        return (
+            _DAY_SECONDS,
+            "크레딧 소진 — Plans & Billing에서 충전 필요 (24시간 후 재시도)",
+        )
+
+    # Gemini 일일 quota 초과
+    if provider == "gemini" and (
+        "resource_exhausted" in body or "resource has been exhausted" in body
+    ):
+        secs = _next_pt_midnight_seconds()
+        eta = datetime.now(timezone.utc) + timedelta(seconds=secs)
+        return (
+            secs,
+            f"일일 quota 초과 — UTC {eta.strftime('%H:%M')}에 자동 리셋 ({_fmt_duration(secs)} 후)",
+        )
+
+    # OpenAI billing quota 초과
+    if "insufficient_quota" in body or "exceeded your current quota" in body:
+        return (
+            _DAY_SECONDS,
+            "billing quota 초과 — OpenAI 대시보드에서 한도 증액 필요 (24시간 후 재시도)",
+        )
+
+    # 일반 429 rate limit
+    if status == 429 or "rate limit" in body or "rate_limit_exceeded" in body:
+        return _GEMINI_RATE_LIMIT_SECONDS, "분당 요청 한도 초과 (60초 후 재시도)"
+
+    return None
+
+
+def _trip(provider: str, duration: float, reason: str) -> None:
+    """Circuit Breaker 차단 설정 및 로그."""
+    _circuit_breaker[provider] = {"until": time.time() + duration, "reason": reason}
+    logger.warning(
+        f"[CircuitBreaker] ⛔ {provider} 차단 ({_fmt_duration(duration)}): {reason}"
+    )
+
+
+def _is_tripped(provider: str) -> Tuple[bool, str]:
+    """(차단 여부, 사유+남은시간) 반환. 만료 항목 자동 제거."""
+    entry = _circuit_breaker.get(provider)
+    if not entry:
+        return False, ""
+    remaining = entry["until"] - time.time()
+    if remaining <= 0:
+        del _circuit_breaker[provider]
+        return False, ""
+    return True, f"{entry['reason']} (남은 시간: {_fmt_duration(remaining)})"
+
+
+def get_provider_status() -> Dict[str, Dict]:
+    """현재 프로바이더 Circuit Breaker 상태를 반환.
+
+    반환 형식:
+      {
+        "gemini": {"available": True, "reason": ""},
+        "claude": {"available": False, "reason": "크레딧 소진 ... (남은: 23시간)"},
+        ...
+      }
+    """
+    chain = _get_fallback_chain()
+    result = {}
+    for p in _VALID_PROVIDERS:
+        tripped, reason = _is_tripped(p)
+        result[p] = {
+            "available": not tripped,
+            "in_fallback_chain": p in chain,
+            "reason": reason if tripped else "",
+        }
+    return result
 
 
 def _get_client_module(provider: str):
@@ -24,6 +152,12 @@ def _get_client_module(provider: str):
     if provider == "ollama":
         from . import ollama_client
         return ollama_client
+    if provider == "openai":
+        from . import openai_client
+        return openai_client
+    if provider == "grok":
+        from . import grok_client
+        return grok_client
     from . import gemini_client
     return gemini_client
 
@@ -35,32 +169,62 @@ def _get_active_client_module():
     return _get_client_module(provider)
 
 
+_VALID_PROVIDERS = {"gemini", "claude", "ollama", "openai", "grok"}
+
+
 def _get_fallback_chain() -> List[str]:
-    """model_config.json의 fallback_chain을 반환. 없으면 active_provider만."""
+    """model_config.json의 fallback_chain을 반환. 없으면 active_provider만.
+
+    중복 제거 + 유효 프로바이더만 필터링하여 RecursionError 방지 (#51).
+    On error: returns ["gemini"].
+    """
     from .model_manager import load_config, get_active_model
     config = load_config()
     chain = config.get("fallback_chain", [])
     if not chain:
         provider, _ = get_active_model(config)
-        return [provider]
-    return chain
+        chain = [provider]
+
+    seen: set = set()
+    result: List[str] = []
+    for p in chain:
+        if p in _VALID_PROVIDERS and p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result or ["gemini"]
 
 
 async def _call_with_fallback(fn_name: str, **kwargs):
     """폴백 체인 순서대로 provider를 시도해 첫 성공 결과를 반환.
 
-    모든 provider가 실패하면 마지막 예외를 re-raise 합니다.
+    Circuit Breaker: quota/크레딧 소진 프로바이더는 리셋 시각까지 자동 스킵.
+    모든 provider가 실패/스킵되면 마지막 예외를 re-raise 합니다.
     """
     chain = _get_fallback_chain()
     last_exc: Exception = RuntimeError("폴백 체인이 비어 있습니다.")
 
     for provider in chain:
+        # Circuit Breaker: 차단 중인 프로바이더 스킵
+        tripped, trip_reason = _is_tripped(provider)
+        if tripped:
+            logger.info(f"[CircuitBreaker] ⏭ {provider} 스킵: {trip_reason}")
+            last_exc = RuntimeError(f"{provider} 사용 불가 — {trip_reason}")
+            continue
+
         try:
             module = _get_client_module(provider)
             fn = getattr(module, fn_name)
             return await fn(**kwargs)
         except Exception as exc:
-            logger.warning(f"[폴백] provider={provider} fn={fn_name} 실패: {exc}")
+            # Circuit Breaker 트립 여부 판단
+            trip = _detect_circuit_trip(exc, provider)
+            if trip:
+                duration, reason = trip
+                _trip(provider, duration, reason)
+            logger.warning(
+                f"[폴백] provider={provider} fn={fn_name} 실패: {exc}",
+                exc_info=True,
+            )
             last_exc = exc
 
     raise last_exc
@@ -73,7 +237,8 @@ async def generate_execution_plan(
     model_preference: ModelPreference = "auto",
     system_prompts: List[str] = None,
     allowed_skills: Optional[List[str]] = None,
-):
+) -> list:
+    """실행 계획 그룹 목록을 생성합니다. On error: raises (폴백 체인 소진 시)."""
     return await _call_with_fallback(
         "generate_execution_plan",
         user_query=user_query,
@@ -85,15 +250,55 @@ async def generate_execution_plan(
     )
 
 
+async def generate_parallel_plan(
+    user_query: str,
+    requirements_content: str,
+    history: list,
+    model_preference: ModelPreference = "auto",
+    system_prompts: List[str] = None,
+    allowed_skills: Optional[List[str]] = None,
+):
+    """병렬 플래닝 모드: 독립 태스크를 여러 그룹으로 한 번에 계획합니다.
+
+    react_planner_parallel_note를 system_prompts 앞에 주입하여
+    can_parallel=True 그룹을 여러 개 반환하도록 유도합니다.
+    """
+    try:
+        parallel_note = _acm.get_prompt("react_planner_parallel_note")
+    except KeyError:
+        parallel_note = ""
+    augmented_prompts = ([parallel_note] if parallel_note else []) + (system_prompts or [])
+    return await _call_with_fallback(
+        "generate_execution_plan",
+        user_query=user_query,
+        requirements_content=requirements_content,
+        history=history,
+        model_preference=model_preference,
+        system_prompts=augmented_prompts,
+        allowed_skills=allowed_skills,
+    )
+
+
 async def generate_final_answer(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> str:
-    return await _call_with_fallback(
-        "generate_final_answer",
-        history=history,
-        model_preference=model_preference,
-    )
+    try:
+        return await _call_with_fallback(
+            "generate_final_answer",
+            history=history,
+            model_preference=model_preference,
+        )
+    except Exception as e:
+        # 모든 프로바이더 실패 시 최후 폴백 메시지 반환
+        logger.error(f"[generate_final_answer] 모든 프로바이더 실패: {e}", exc_info=True)
+        last_result = next(
+            (item for item in reversed(history) if isinstance(item, str) and item.startswith("  - 실행 결과:")),
+            None,
+        )
+        if last_result:
+            return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
+        return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
 
 
 async def extract_keywords(
@@ -138,31 +343,13 @@ async def generate_clarifying_questions(
 
     폴백 체인을 사용합니다. 모든 provider 실패 시 빈 리스트 반환.
     """
-    from .model_manager import load_config, get_active_model
-    chain = _get_fallback_chain()
-    last_exc: Exception = RuntimeError("no provider")
-
     prompt = _acm.render_prompt("clarifying_questions_user", user_query=user_query)
-
-    for provider in chain:
-        try:
-            import json, re
-            module = _get_client_module(provider)
-            # generate_final_answer를 재사용해 단순 텍스트 응답 획득
-            raw = await module.generate_final_answer(
-                history=[f"USER_REQUEST: {prompt}"],
-                model_preference=model_preference,
-            )
-            # JSON 배열 추출
-            match = re.search(r"\[.*?\]", raw, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-            return []
-        except Exception as exc:
-            logger.warning(f"[Prometheus] provider={provider} 실패: {exc}")
-            last_exc = exc
-
-    logger.warning(f"[Prometheus] 모든 provider 실패: {last_exc}")
+    result = await _call_with_parse_fallback(
+        "USER_REQUEST", prompt, model_preference, "Prometheus", _parse_json_arr
+    )
+    if result is not None:
+        return result
+    logger.warning("[Prometheus] 모든 provider 실패")
     return []
 
 
@@ -177,21 +364,16 @@ async def summarize_history(
     """
     if not history:
         return ""
-
-    excerpt = "\n".join(str(h) for h in history)[:8000]
+    excerpt = "\n".join(str(h) for h in history)[:HISTORY_EXCERPT_MAX_CHARS]
     prompt_history = [_acm.render_prompt("summarize_history_user", excerpt=excerpt)]
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            return await module.generate_final_answer(
-                history=prompt_history,
-                model_preference=model_preference,
-            )
-        except Exception as exc:
-            logger.warning(f"[요약] provider={provider} 실패: {exc}")
-
-    return ""
+    try:
+        return await _call_with_fallback(
+            "generate_final_answer",
+            history=prompt_history,
+            model_preference=model_preference,
+        )
+    except Exception:
+        return ""
 
 
 # P3-C: IntentGate — 도구 실행 필요 여부 사전 분류
@@ -206,21 +388,82 @@ async def classify_intent(
     실패 시 'task'를 반환합니다 (보수적 기본값).
     """
     prompt = _acm.render_prompt("classify_intent_user", user_query=user_query)
+    def _parse(raw):
+        return "chat" if "chat" in raw.strip().lower()[:20] else "task"
+    result = await _call_with_parse_fallback(
+        "INTENT_CLASSIFY", prompt, model_preference, "IntentGate", _parse
+    )
+    return result if result is not None else "task"
 
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"INTENT_CLASSIFY: {prompt}"],
-                model_preference=model_preference,
-            )
-            if "chat" in raw.strip().lower()[:20]:
-                return "chat"
-            return "task"
-        except Exception as exc:
-            logger.warning(f"[IntentGate] provider={provider} 실패: {exc}")
 
-    return "task"  # 보수적 기본값
+_INTENT_CATEGORIES = frozenset({
+    "dialogue", "code_write", "file_ops", "web_search", "analysis"
+})
+_COMPLEXITY_CATEGORIES = frozenset({"quick", "deep", "ultrabrain", "visual"})
+
+
+async def classify_intent_full(
+    user_query: str,
+    model_preference: ModelPreference = "standard",
+) -> str:
+    """사용자 쿼리를 5-카테고리로 분류합니다.
+
+    카테고리: dialogue / code_write / file_ops / web_search / analysis
+    실패 시 'analysis' 반환 (보수적 기본값).
+    """
+    prompt = _acm.render_prompt("classify_intent_full_user", user_query=user_query)
+    def _parse(raw):
+        cat = raw.strip().lower().split()[0] if raw.strip() else ""
+        return cat if cat in _INTENT_CATEGORIES else None
+    try:
+        result = await _call_with_parse_fallback(
+            "INTENT_FULL", prompt, model_preference, "IntentGateFull", _parse
+        )
+    except Exception as exc:
+        logger.warning(f"[IntentGateFull] 예외 발생, analysis로 폴백: {exc}")
+        return "analysis"
+    return result if result is not None else "analysis"
+
+
+async def classify_intent_and_category(
+    user_query: str,
+    model_preference: ModelPreference = "standard",
+) -> tuple:
+    """의도(5-카테고리) + 복잡도(4-카테고리)를 단일 LLM 호출로 분류합니다.
+
+    Returns:
+        (intent, complexity) 튜플
+        intent: "dialogue"|"code_write"|"file_ops"|"web_search"|"analysis"
+        complexity: "quick"|"deep"|"ultrabrain"|"visual"
+    실패 시 ("analysis", "deep") 반환 (보수적 기본값).
+    """
+    prompt = _acm.render_prompt("classify_intent_and_category_user", user_query=user_query)
+
+    def _parse(raw: str):
+        intent = None
+        complexity = None
+        for line in raw.strip().splitlines():
+            line = line.strip().lower()
+            if line.startswith("intent:"):
+                val = line.split(":", 1)[1].strip().split()[0] if ":" in line else ""
+                if val in _INTENT_CATEGORIES:
+                    intent = val
+            elif line.startswith("complexity:"):
+                val = line.split(":", 1)[1].strip().split()[0] if ":" in line else ""
+                if val in _COMPLEXITY_CATEGORIES:
+                    complexity = val
+        if intent and complexity:
+            return (intent, complexity)
+        return None
+
+    try:
+        result = await _call_with_parse_fallback(
+            "INTENT_CATEGORY", prompt, model_preference, "IntentAndCategory", _parse
+        )
+    except Exception as exc:
+        logger.warning(f"[IntentAndCategory] 예외 발생, 기본값 사용: {exc}")
+        return ("analysis", "deep")
+    return result if result is not None else ("analysis", "deep")
 
 
 # ── 4층 파이프라인 전용 LLM 함수 ─────────────────────────────────────────────
@@ -244,39 +487,27 @@ async def generate_design(
       }
     실패 시 기본 구조를 반환합니다.
     """
-    import json, re
     system_ctx = persona_prompt + "\n\n" if persona_prompt else ""
     history_ctx = ""
     if history:
-        recent = history[-6:]  # 최근 6항목만 (토큰 절약)
+        recent = history[-RECENT_HISTORY_ITEMS:]
         history_ctx = "\n".join(str(h) for h in recent) + "\n\n"
-
     prompt = _acm.render_prompt(
         "design_user",
         system_ctx=system_ctx,
         history_ctx=history_ctx,
         user_query=user_query,
     )
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"DESIGN_GENERATE: {prompt}"],
-                model_preference=model_preference,
-            )
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-        except Exception as exc:
-            logger.warning(f"[Design] provider={provider} 실패: {exc}")
-
-    # 실패 시 기본 구조
+    result = await _call_with_parse_fallback(
+        "DESIGN_GENERATE", prompt, model_preference, "Design", _parse_json_obj
+    )
+    if result:
+        return result
     return {
         "goal": user_query[:100],
-        "approach": "단계적으로 요청을 처리합니다.",
+        "approach": "단계적으로 처리합니다.",
         "constraints": [],
-        "expected_outputs": ["작업 완료"],
+        "expected_outputs": ["완료"],
         "complexity": "medium",
     }
 
@@ -292,7 +523,6 @@ async def decompose_tasks(
     최대 10개 태스크.
     실패 시 단일 태스크 목록을 반환합니다.
     """
-    import json, re
     design_text = (
         f"목표: {design.get('goal', '')}\n"
         f"접근법: {design.get('approach', '')}\n"
@@ -303,29 +533,17 @@ async def decompose_tasks(
         design_text=design_text,
         user_query=user_query,
     )
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"TASK_DECOMPOSE: {prompt}"],
-                model_preference=model_preference,
-            )
-            match = re.search(r"\[.*\]", raw, re.DOTALL)
-            if match:
-                tasks = json.loads(match.group())
-                # 형식 보정
-                valid = [
-                    {"title": t.get("title", "태스크"), "description": t.get("description", "")}
-                    for t in tasks if isinstance(t, dict)
-                ]
-                if valid:
-                    return valid[:10]
-        except Exception as exc:
-            logger.warning(f"[TaskDecompose] provider={provider} 실패: {exc}")
-
-    # 실패 시 단일 태스크
-    return [{"title": user_query[:80], "description": design.get("approach", "")}]
+    def _parse(raw):
+        arr = _parse_json_arr(raw)
+        if not arr:
+            return None
+        valid = [{"title": t.get("title", "태스크"), "description": t.get("description", "")}
+                 for t in arr if isinstance(t, dict)]
+        return valid[:10] if valid else None
+    result = await _call_with_parse_fallback(
+        "TASK_DECOMPOSE", prompt, model_preference, "TaskDecompose", _parse
+    )
+    return result or [{"title": user_query[:80], "description": design.get("approach", "")}]
 
 
 async def map_plans(
@@ -339,39 +557,24 @@ async def map_plans(
       [{"action": "수행 동작 설명", "tool_hints": ["예상도구1", "예상도구2"]}, ...]
     실패 시 단일 단계를 반환합니다.
     """
-    import json, re
-    tools_str = ", ".join(available_tools[:30]) if available_tools else "없음"
+    tools_str = ", ".join(available_tools[:MAX_TOOLS_IN_PROMPT]) if available_tools else "없음"
     prompt = _acm.render_prompt(
         "map_plans_user",
         task_title=task.get("title", ""),
         task_description=task.get("description", ""),
         tools_str=tools_str,
     )
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"PLAN_MAP: {prompt}"],
-                model_preference=model_preference,
-            )
-            match = re.search(r"\[.*\]", raw, re.DOTALL)
-            if match:
-                plans = json.loads(match.group())
-                valid = [
-                    {
-                        "action": p.get("action", "실행"),
-                        "tool_hints": p.get("tool_hints", [])[:5],
-                    }
-                    for p in plans if isinstance(p, dict)
-                ]
-                if valid:
-                    return valid[:8]
-        except Exception as exc:
-            logger.warning(f"[PlanMap] provider={provider} 실패: {exc}")
-
-    # 실패 시 단일 단계
-    return [{"action": task.get("title", "실행"), "tool_hints": []}]
+    def _parse(raw):
+        arr = _parse_json_arr(raw)
+        if not arr:
+            return None
+        valid = [{"action": p.get("action", "실행"), "tool_hints": p.get("tool_hints", [])[:5]}
+                 for p in arr if isinstance(p, dict)]
+        return valid[:8] if valid else None
+    result = await _call_with_parse_fallback(
+        "PLAN_MAP", prompt, model_preference, "PlanMap", _parse
+    )
+    return result or [{"action": task.get("title", "실행"), "tool_hints": []}]
 
 
 async def build_execution_group_for_step(
@@ -389,14 +592,11 @@ async def build_execution_group_for_step(
 
     반환 형식: ExecutionGroup.model_dump() 호환 dict
     """
-    import json, re
-
-    tools_desc = "\n".join(f"- {t}" for t in available_tools[:20])
+    tools_desc = "\n".join(f"- {t}" for t in available_tools[:MAX_TOOLS_IN_PROMPT])
     history_ctx = ""
     if history:
-        recent = "\n".join(str(h) for h in history[-4:])
+        recent = "\n".join(str(h) for h in history[-RECENT_HISTORY_ITEMS:])
         history_ctx = f"최근 대화:\n{recent}\n\n"
-
     prompt = _acm.render_prompt(
         "build_execution_group_user",
         history_ctx=history_ctx,
@@ -406,26 +606,16 @@ async def build_execution_group_for_step(
         tool_hints=str(plan_step.get("tool_hints", [])),
         tools_desc=tools_desc,
     )
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"EXEC_GROUP_BUILD: {prompt}"],
-                model_preference=model_preference,
-            )
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if match:
-                group = json.loads(match.group())
-                # 최소 형식 검증
-                if "group_id" in group and "tasks" in group:
-                    group.setdefault("description", plan_step.get("action", ""))
-                    return group
-        except Exception as exc:
-            logger.warning(f"[ExecGroupBuild] provider={provider} 실패: {exc}")
-
-    # 실패 시 빈 그룹 반환 (실행은 되지 않지만 파이프라인 진행 가능)
-    return {
+    def _parse(raw):
+        group = _parse_json_obj(raw)
+        if group and "group_id" in group and "tasks" in group:
+            group.setdefault("description", plan_step.get("action", ""))
+            return group
+        return None
+    result = await _call_with_parse_fallback(
+        "EXEC_GROUP_BUILD", prompt, model_preference, "ExecGroupBuild", _parse
+    )
+    return result or {
         "group_id": "group_fallback",
         "description": plan_step.get("action", "실행"),
         "tasks": [],
@@ -434,13 +624,63 @@ async def build_execution_group_for_step(
 
 # ── Phase 2: 템플릿 인자 적응 ─────────────────────────────────────────────────
 
-def _extract_json_block(text: str) -> str:
-    """```json ... ``` 블록에서 JSON 문자열을 추출합니다."""
-    if "```" in text:
-        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-        if m:
-            return m.group(1).strip()
-    return text.strip()
+
+def _parse_json_obj(text: str) -> Optional[dict]:
+    """raw 텍스트에서 JSON 객체({})를 추출합니다. 실패 시 None."""
+    clean = _extract_json_block(text)
+    m = re.search(r"\{.*\}", clean, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _parse_json_arr(text: str) -> Optional[list]:
+    """raw 텍스트에서 JSON 배열([])을 추출합니다. 실패 시 None."""
+    clean = _extract_json_block(text)
+    m = re.search(r"\[.*\]", clean, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+async def _call_with_parse_fallback(
+    prefix: str,
+    prompt: str,
+    model_preference: str,
+    warn_prefix: str,
+    parser_fn,
+) -> Optional[Any]:
+    """폴백 체인 순서대로 provider를 시도.
+    parser_fn(raw)이 None이 아닌 결과를 반환하면 즉시 중단.
+    모두 실패하면 None 반환. Circuit Breaker 적용.
+    """
+    for provider in _get_fallback_chain():
+        tripped, trip_reason = _is_tripped(provider)
+        if tripped:
+            logger.info(f"[CircuitBreaker] ⏭ {provider} 스킵 ({warn_prefix}): {trip_reason}")
+            continue
+        try:
+            module = _get_client_module(provider)
+            raw = await module.generate_final_answer(
+                history=[f"{prefix}: {prompt}"],
+                model_preference=model_preference,
+            )
+            result = parser_fn(raw)
+            if result is not None:
+                return result
+        except Exception as exc:
+            trip = _detect_circuit_trip(exc, provider)
+            if trip:
+                duration, reason = trip
+                _trip(provider, duration, reason)
+            logger.warning(f"[{warn_prefix}] provider={provider} 실패: {exc}", exc_info=True)
+    return None
 
 
 async def extract_wisdom(
@@ -463,32 +703,18 @@ async def extract_wisdom(
         context=context[:500],
     )
 
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"WISDOM_EXTRACT: {prompt}"],
-                model_preference="standard",
-            )
-            text = _extract_json_block(raw)
-            match = re.search(r"\[.*\]", text, re.DOTALL)
-            if match:
-                items = json.loads(match.group())
-                if isinstance(items, list):
-                    return [
-                        {
-                            "category": e.get("category", "misc"),
-                            "content": e.get("content", ""),
-                            "source_tool": e.get("source_tool", ""),
-                        }
-                        for e in items
-                        if isinstance(e, dict) and e.get("content")
-                    ]
-            return []
-        except Exception as exc:
-            logger.debug(f"[Wisdom] provider={provider} 실패: {exc}")
-
-    return []
+    def _parse(raw):
+        arr = _parse_json_arr(raw)
+        if not isinstance(arr, list):
+            return None
+        items = [{"category": e.get("category", "misc"), "content": e.get("content", ""),
+                  "source_tool": e.get("source_tool", "")}
+                 for e in arr if isinstance(e, dict) and e.get("content")]
+        return items if items else None
+    result = await _call_with_parse_fallback(
+        "WISDOM_EXTRACT", prompt, "standard", "Wisdom", _parse
+    )
+    return result or []
 
 
 async def validate_execution_plan(
@@ -517,27 +743,20 @@ async def validate_execution_plan(
         plan_json=plan_json[:3000],
     )
 
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"PLAN_VALIDATE: {prompt}"],
-                model_preference="standard",
+    def _parse(raw):
+        data = _parse_json_obj(raw)
+        if data:
+            return PlanValidation(
+                valid=bool(data.get("valid", True)),
+                score=float(data.get("score", 1.0)),
+                issues=data.get("issues", []),
+                suggestions=data.get("suggestions", []),
             )
-            text = _extract_json_block(raw)
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                data = json.loads(match.group())
-                return PlanValidation(
-                    valid=bool(data.get("valid", True)),
-                    score=float(data.get("score", 1.0)),
-                    issues=data.get("issues", []),
-                    suggestions=data.get("suggestions", []),
-                )
-        except Exception as exc:
-            logger.debug(f"[PlanValidate] provider={provider} 실패: {exc}")
-
-    return PlanValidation(valid=True, score=1.0)
+        return None
+    result = await _call_with_parse_fallback(
+        "PLAN_VALIDATE", prompt, "standard", "PlanValidate", _parse
+    )
+    return result or PlanValidation(valid=True, score=1.0)
 
 
 async def classify_task_category(user_query: str) -> str:
@@ -594,13 +813,10 @@ async def adapt_template_arguments(
     - 실패 시 원본 template_group을 그대로 반환합니다.
     - standard 티어 이하로 처리 (비용 최소화).
     """
-    import json, re
-
     template_json = json.dumps(template_group, ensure_ascii=False, indent=2)
     history_ctx = ""
     if history:
         history_ctx = "최근 대화:\n" + "\n".join(str(h) for h in history) + "\n\n"
-
     prompt = _acm.render_prompt(
         "adapt_template_user",
         history_ctx=history_ctx,
@@ -609,20 +825,12 @@ async def adapt_template_arguments(
         step_action=plan_step.get("action", ""),
         template_json=template_json,
     )
-
-    for provider in _get_fallback_chain():
-        try:
-            module = _get_client_module(provider)
-            raw = await module.generate_final_answer(
-                history=[f"TEMPLATE_ADAPT: {prompt}"],
-                model_preference=model_preference,
-            )
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if match:
-                adapted = json.loads(match.group())
-                if "group_id" in adapted and "tasks" in adapted:
-                    return adapted
-        except Exception as exc:
-            logger.warning(f"[TemplateAdapt] provider={provider} 실패: {exc}")
-
-    return template_group  # 실패 시 원본 반환
+    def _parse(raw):
+        adapted = _parse_json_obj(raw)
+        if adapted and "group_id" in adapted and "tasks" in adapted:
+            return adapted
+        return None
+    result = await _call_with_parse_fallback(
+        "TEMPLATE_ADAPT", prompt, model_preference, "TemplateAdapt", _parse
+    )
+    return result or template_group

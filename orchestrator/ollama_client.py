@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 from .models import ExecutionGroup
 from .tool_registry import get_filtered_tool_descriptions
-from .constants import HISTORY_MAX_CHARS
+from .constants import HISTORY_MAX_CHARS, truncate_history as _truncate_history
 from . import agent_config_manager as _acm
 
 load_dotenv()
@@ -33,29 +33,6 @@ STANDARD_MODEL_NAME = os.getenv("OLLAMA_STANDARD_MODEL", "qwen2.5-coder:3b")
 _TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
 ModelPreference = Literal["auto", "standard", "high"]
-
-DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
-
-
-def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
-    """최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation."""
-    if not history:
-        return ""
-
-    selected = []
-    total = 0
-    for item in reversed(history):
-        item_len = len(item)
-        if total + item_len > max_chars and selected:
-            break
-        selected.append(item)
-        total += item_len
-
-    selected.reverse()
-
-    if len(selected) < len(history):
-        return "... (이전 기록 생략) ...\n" + "\n".join(selected)
-    return "\n".join(selected)
 
 
 def _get_model_name(
@@ -189,14 +166,6 @@ async def generate_final_answer(
             f"Ollama 서버에 연결할 수 없습니다 ({OLLAMA_BASE_URL}). "
             "'ollama serve' 명령으로 서버를 먼저 실행해주세요."
         )
-    except Exception as e:
-        logging.error(f"generate_final_answer 오류: {e}", exc_info=True)
-        last_result = next(
-            (item for item in reversed(history) if item.startswith("  - 실행 결과:")), None
-        )
-        if last_result:
-            return f"최종 요약 생성에 실패했습니다. 마지막 실행 결과입니다:\n{last_result}"
-        return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다."
 
 
 async def extract_keywords(

@@ -3,7 +3,7 @@
 """orchestrator/tool_registry.py에 대한 단위 테스트"""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import importlib
 
 from . import tool_registry as tr
@@ -54,7 +54,7 @@ class TestGetTool:
 
     def test_alias_resolution(self):
         """별칭으로 MCP 도구 검색"""
-        session_mock = MagicMock()
+        session_mock = AsyncMock()
         tr._mcp_tools["read_file"] = {
             "session": session_mock,
             "server": "filesystem",
@@ -137,7 +137,7 @@ class TestToolProviders:
 
     def test_get_tool_uses_preference(self):
         """선호 서버가 설정되면 해당 세션 사용"""
-        s1, s2 = MagicMock(), MagicMock()
+        s1, s2 = AsyncMock(), AsyncMock()
         tr._mcp_tools["read_file"] = {
             "session": s1, "server": "fs1",
             "description": "read", "input_schema": {},
