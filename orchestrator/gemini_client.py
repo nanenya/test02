@@ -10,7 +10,7 @@ import logging
 from dotenv import load_dotenv
 from .tool_registry import get_all_tool_descriptions, get_filtered_tool_descriptions
 from .models import ToolCall, ExecutionGroup
-from .constants import HISTORY_MAX_CHARS
+from .constants import HISTORY_MAX_CHARS, truncate_history as _truncate_history
 from . import agent_config_manager as _acm
 from typing import Dict, Any, List, Literal, Optional
 
@@ -23,13 +23,7 @@ else:
     logging.warning("GEMINI_API_KEY 환경변수가 설정되지 않았습니다. Gemini API 호출 시 오류가 발생합니다.")
     client = None
 
-HIGH_PERF_MODEL_NAME = os.getenv("GEMINI_HIGH_PERF_MODEL", "gemini-2.0-flash-001")
-STANDARD_MODEL_NAME = os.getenv("GEMINI_STANDARD_MODEL", "gemini-2.0-flash-lite-001")
-
 ModelPreference = Literal["auto", "standard", "high"]
-
-
-DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
 
 
 def _record_usage(response, model_name: str) -> None:
@@ -47,29 +41,6 @@ def _record_usage(response, model_name: str) -> None:
         pass
 
 
-def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
-    """최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation.
-
-    뒤(최신)부터 역순으로 항목을 추가하되, max_chars를 초과하면 중단합니다.
-    """
-    if not history:
-        return ""
-
-    selected = []
-    total = 0
-    for item in reversed(history):
-        item_len = len(item)
-        if total + item_len > max_chars and selected:
-            break
-        selected.append(item)
-        total += item_len
-
-    selected.reverse()
-
-    if len(selected) < len(history):
-        return "... (이전 기록 생략) ...\n" + "\n".join(selected)
-    return "\n".join(selected)
-
 JSON_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
@@ -79,22 +50,20 @@ def _get_model_name(
     model_preference: ModelPreference = "auto",
     default_type: Literal["high", "standard"] = "standard",
 ) -> str:
+    from .model_manager import load_config
+    config = load_config()
+    gemini_cfg = config.get("providers", {}).get("gemini", {})
     if model_preference == "high":
-        return HIGH_PERF_MODEL_NAME
+        return gemini_cfg.get("high_model") or config.get("active_model", "")
     if model_preference == "standard":
-        return STANDARD_MODEL_NAME
-    # "auto": model_config.json에 설정된 활성 모델 우선 사용
-    try:
-        from .model_manager import load_config, get_active_model
-        _, active_model = get_active_model(load_config())
-        if active_model:
-            return active_model
-    except Exception:
-        pass
-    # 폴백: default_type에 따라 상수 사용
+        return gemini_cfg.get("standard_model") or config.get("active_model", "")
+    # "auto": active_model 우선, 없으면 default_type에 따라 high/standard_model
+    active = config.get("active_model", "")
+    if active:
+        return active
     if default_type == "high":
-        return HIGH_PERF_MODEL_NAME
-    return STANDARD_MODEL_NAME
+        return gemini_cfg.get("high_model", "")
+    return gemini_cfg.get("standard_model", "")
 
 
 async def generate_execution_plan(
@@ -171,27 +140,16 @@ async def generate_final_answer(
     history_str = _truncate_history(history)
 
     summary_prompt = _acm.render_prompt("final_answer_user", history_str=history_str)
-    try:
-        response = await client.aio.models.generate_content(
-            model=model_name,
-            contents=summary_prompt,
-        )
-        _record_usage(response, model_name)
+    response = await client.aio.models.generate_content(
+        model=model_name,
+        contents=summary_prompt,
+    )
+    _record_usage(response, model_name)
 
-        if not response.text:
-            raise ValueError("모델이 빈 응답을 반환했습니다 (내용 필터링 가능성).")
+    if not response.text:
+        raise ValueError("모델이 빈 응답을 반환했습니다 (내용 필터링 가능성).")
 
-        return response.text.strip()
-
-    except Exception as e:
-        logging.error(f"Executor (generate_final_answer) 오류: {e}", exc_info=True)
-
-        last_result = next((item for item in reversed(history) if item.startswith("  - 실행 결과:")), None)
-
-        if last_result:
-            return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
-        else:
-            return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
+    return response.text.strip()
 
 
 async def extract_keywords(

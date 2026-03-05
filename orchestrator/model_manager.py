@@ -5,22 +5,29 @@
 import json
 import os
 import logging
-from typing import Dict, List, Optional, Any
+import httpx
+from typing import Dict, List, Optional, Any, Tuple
 
 from google import genai
 
 _CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model_config.json")
 
+_ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
+_OPENAI_MODELS_URL    = "https://api.openai.com/v1/models"
+_GROK_MODELS_URL      = "https://api.x.ai/v1/models"
+
 _DEFAULT_CONFIG = {
-    "version": "1.0",
+    "version": "1.1",
     "active_provider": "gemini",
-    "active_model": "gemini-2.0-flash-001",
+    "active_model": "",
     "providers": {
         "gemini": {
             "enabled": True,
             "api_key_env": "GEMINI_API_KEY",
             "fallback_env": "GOOGLE_API_KEY",
-            "default_model": "gemini-2.0-flash-001",
+            "default_model": "",
+            "high_model": "",
+            "standard_model": "",
         },
         "claude": {
             "enabled": True,
@@ -66,10 +73,10 @@ def save_config(config: Dict[str, Any], path: str = _CONFIG_PATH) -> None:
         f.write("\n")
 
 
-def get_active_model(config: Optional[Dict[str, Any]] = None) -> tuple:
+def get_active_model(config: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
     if config is None:
         config = load_config()
-    return config.get("active_provider", "gemini"), config.get("active_model", "gemini-2.0-flash-001")
+    return config.get("active_provider", "gemini"), config.get("active_model", "")
 
 
 def set_active_model(provider: str, model: str, config: Optional[Dict[str, Any]] = None, path: str = _CONFIG_PATH) -> Dict[str, Any]:
@@ -125,14 +132,33 @@ def _get_api_key(provider_info: Dict[str, Any]) -> Optional[str]:
     return key
 
 
-async def fetch_models_gemini(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+def _get_provider_api_key(
+    config: Optional[Dict[str, Any]],
+    provider_name: str,
+    default_env: str,
+) -> Tuple[Dict[str, Any], str]:
+    """프로바이더 설정과 API 키 반환. 키 미설정 시 ValueError."""
     if config is None:
         config = load_config()
-    provider_info = config.get("providers", {}).get("gemini", {})
+    provider_info = config.get("providers", {}).get(provider_name, {})
     api_key = _get_api_key(provider_info)
     if not api_key:
-        raise ValueError(f"API 키 미설정 (환경변수: {provider_info.get('api_key_env', 'GEMINI_API_KEY')})")
+        raise ValueError(
+            f"API 키 미설정 (환경변수: {provider_info.get('api_key_env', default_env)})"
+        )
+    return provider_info, api_key
 
+
+async def _fetch_json_get(url: str, headers: dict, timeout: float = 30.0) -> dict:
+    """GET 요청으로 JSON을 반환합니다."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def fetch_models_gemini(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    _, api_key = _get_provider_api_key(config, "gemini", "GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     models = []
     for model in client.models.list():
@@ -145,26 +171,11 @@ async def fetch_models_gemini(config: Optional[Dict[str, Any]] = None) -> List[D
 
 
 async def fetch_models_claude(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    if config is None:
-        config = load_config()
-    provider_info = config.get("providers", {}).get("claude", {})
-    api_key = _get_api_key(provider_info)
-    if not api_key:
-        raise ValueError(f"API 키 미설정 (환경변수: {provider_info.get('api_key_env', 'ANTHROPIC_API_KEY')})")
-
-    import httpx
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.anthropic.com/v1/models",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
+    _, api_key = _get_provider_api_key(config, "claude", "ANTHROPIC_API_KEY")
+    data = await _fetch_json_get(
+        _ANTHROPIC_MODELS_URL,
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+    )
     models = []
     for m in data.get("data", []):
         models.append({
@@ -176,23 +187,11 @@ async def fetch_models_claude(config: Optional[Dict[str, Any]] = None) -> List[D
 
 
 async def fetch_models_openai(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    if config is None:
-        config = load_config()
-    provider_info = config.get("providers", {}).get("openai", {})
-    api_key = _get_api_key(provider_info)
-    if not api_key:
-        raise ValueError(f"API 키 미설정 (환경변수: {provider_info.get('api_key_env', 'OPENAI_API_KEY')})")
-
-    import httpx
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.openai.com/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
+    _, api_key = _get_provider_api_key(config, "openai", "OPENAI_API_KEY")
+    data = await _fetch_json_get(
+        _OPENAI_MODELS_URL,
+        {"Authorization": f"Bearer {api_key}"},
+    )
     models = []
     for m in data.get("data", []):
         models.append({
@@ -204,23 +203,11 @@ async def fetch_models_openai(config: Optional[Dict[str, Any]] = None) -> List[D
 
 
 async def fetch_models_grok(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    if config is None:
-        config = load_config()
-    provider_info = config.get("providers", {}).get("grok", {})
-    api_key = _get_api_key(provider_info)
-    if not api_key:
-        raise ValueError(f"API 키 미설정 (환경변수: {provider_info.get('api_key_env', 'XAI_API_KEY')})")
-
-    import httpx
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.x.ai/v1/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
+    _, api_key = _get_provider_api_key(config, "grok", "XAI_API_KEY")
+    data = await _fetch_json_get(
+        _GROK_MODELS_URL,
+        {"Authorization": f"Bearer {api_key}"},
+    )
     models = []
     for m in data.get("data", []):
         models.append({
@@ -241,12 +228,7 @@ async def fetch_models_ollama(config: Optional[Dict[str, Any]] = None) -> List[D
         provider_info.get("default_base_url", "http://localhost:11434"),
     )
 
-    import httpx
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(f"{base_url}/api/tags")
-        resp.raise_for_status()
-        data = resp.json()
-
+    data = await _fetch_json_get(f"{base_url}/api/tags", {}, timeout=10.0)
     models = []
     for m in data.get("models", []):
         models.append({

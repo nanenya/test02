@@ -139,6 +139,17 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
 .loading { display: inline-block; width: 14px; height: 14px; border: 2px solid #555; border-top-color: #e94560; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty-state { text-align: center; color: #555; padding: 40px; font-size: 14px; }
+
+.btn-pipeline { background: #1a3a5c; color: #5ba8f5; border: 1px solid #1e4a7a; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.btn-pipeline:hover { background: #1e4a7a; }
+.btn-pipeline.active { background: #0f3460; border-color: #5ba8f5; color: #e0e0e0; }
+.design-card { align-self: flex-start; background: #0d2137; border: 1px solid #5ba8f5; border-radius: 8px; padding: 12px 16px; max-width: 85%; }
+.design-card h4 { color: #5ba8f5; font-size: 13px; margin-bottom: 8px; }
+.design-card p { font-size: 13px; color: #ccc; margin-bottom: 10px; white-space: pre-wrap; }
+.ver-table { width:100%; border-collapse:collapse; font-size:12px; }
+.ver-table th { background:#0d1b2e; padding:6px 10px; text-align:left; color:#888; }
+.ver-table td { padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05); }
+.ver-active { color:#28a745; font-weight:600; }
 </style>
 </head>
 <body>
@@ -167,6 +178,7 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
     <div class="chat-input-row">
       <textarea class="chat-input" id="chat-input" placeholder="메시지를 입력하세요... (Shift+Enter 줄바꿈)" rows="1"
         onkeydown="handleInputKey(event)"></textarea>
+      <button class="btn-pipeline" id="btn-pipeline" onclick="togglePipelineMode()" title="4층 파이프라인 모드 전환">🔀 파이프라인</button>
       <button class="btn-send" id="btn-send" onclick="sendMessage()">전송</button>
     </div>
   </div>
@@ -175,21 +187,35 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
 <!-- ═══ 대화이력 탭 ═══ -->
 <div id="tab-history" class="tab-content">
   <div class="history-panel">
-    <div class="filter-row">
-      <input id="hist-keyword" placeholder="키워드 검색..." style="width:180px">
-      <select id="hist-status">
-        <option value="">전체 상태</option>
-        <option value="active">active</option>
-        <option value="final">final</option>
-      </select>
-      <button class="btn-search" onclick="loadHistory()">검색</button>
+    <div class="sub-tab-bar" style="margin-bottom:12px;">
+      <button class="sub-tab-btn active" id="hist-sub-convos-btn" onclick="switchHistSubTab('convos')">대화</button>
+      <button class="sub-tab-btn" id="hist-sub-groups-btn" onclick="switchHistSubTab('groups')">그룹</button>
     </div>
-    <table id="hist-table">
-      <thead>
-        <tr><th>제목</th><th>상태</th><th>최근 업데이트</th><th>키워드</th><th></th></tr>
-      </thead>
-      <tbody id="hist-tbody"></tbody>
-    </table>
+    <div id="hist-sub-convos">
+      <div class="filter-row">
+        <input id="hist-keyword" placeholder="키워드 검색..." style="width:180px">
+        <select id="hist-status">
+          <option value="">전체 상태</option>
+          <option value="active">active</option>
+          <option value="final">final</option>
+        </select>
+        <button class="btn-search" onclick="loadHistory()">검색</button>
+      </div>
+      <table id="hist-table">
+        <thead>
+          <tr><th>제목</th><th>상태</th><th>최근 업데이트</th><th>키워드</th><th></th></tr>
+        </thead>
+        <tbody id="hist-tbody"></tbody>
+      </table>
+    </div>
+    <div id="hist-sub-groups" style="display:none;">
+      <table>
+        <thead>
+          <tr><th>그룹 ID</th><th>설명</th><th>대화 ID</th></tr>
+        </thead>
+        <tbody id="groups-tbody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -276,13 +302,19 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
 
     <!-- 매크로 -->
     <div id="sub-macros" class="sub-tab-content">
-      <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">매크로 목록</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="font-size:14px;color:#ccc;">매크로 목록</h3>
+        <button class="btn-primary" onclick="openMacroModal()">+ 추가</button>
+      </div>
       <div id="macro-list"></div>
     </div>
 
     <!-- 워크플로우 -->
     <div id="sub-workflows" class="sub-tab-content">
-      <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">워크플로우 목록</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="font-size:14px;color:#ccc;">워크플로우 목록</h3>
+        <button class="btn-primary" onclick="openWorkflowModal()">+ 추가</button>
+      </div>
       <div id="workflow-list"></div>
     </div>
   </div>
@@ -297,6 +329,46 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
   </div>
 </div>
 
+<!-- 함수 버전 이력 모달 -->
+<div class="modal-overlay" id="ver-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('ver-modal')">✕</button>
+    <h3 id="ver-modal-title">버전 이력</h3>
+    <div id="ver-modal-body"></div>
+  </div>
+</div>
+
+<!-- 매크로 추가/편집 모달 -->
+<div class="modal-overlay" id="macro-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('macro-modal')">✕</button>
+    <h3 id="macro-modal-title">매크로 추가</h3>
+    <div class="form-group"><label>이름</label><input id="mf-name" placeholder="macro_name"></div>
+    <div class="form-group"><label>설명</label><input id="mf-desc" placeholder="설명 (선택)"></div>
+    <div class="form-group"><label>템플릿</label><textarea id="mf-template" placeholder="{{variable}} 형식으로 변수 사용" style="min-height:100px;"></textarea></div>
+    <div class="form-group"><label>변수 (자동 파싱)</label><div id="mf-vars" style="font-size:12px;color:#888;padding:6px 0;"></div></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-primary" onclick="saveMacro()">저장</button>
+      <button class="btn-primary" style="background:#333;" onclick="closeModal('macro-modal')">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 워크플로우 추가/편집 모달 -->
+<div class="modal-overlay" id="workflow-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('workflow-modal')">✕</button>
+    <h3 id="wf-modal-title">워크플로우 추가</h3>
+    <div class="form-group"><label>이름</label><input id="wff-name" placeholder="workflow_name"></div>
+    <div class="form-group"><label>설명</label><input id="wff-desc" placeholder="설명 (선택)"></div>
+    <div class="form-group"><label>단계 (JSON 배열)</label><textarea id="wff-steps" placeholder='[{"action":"step1"},{"action":"step2"}]' style="min-height:120px;font-family:monospace;"></textarea></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-primary" onclick="saveWorkflow()">저장</button>
+      <button class="btn-primary" style="background:#333;" onclick="closeModal('workflow-modal')">취소</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══ 전역 상태 ═══
 let currentConvoId = null;
@@ -304,6 +376,9 @@ let currentHistory = [];
 let isBusy = false;
 let editingPromptName = null;
 let editingPersonaName = null;
+let pipelineMode = false;
+let editingMacroName = null;
+let editingWorkflowName = null;
 
 // ═══ 유틸 ═══
 const API = (path, opts={}) => fetch('/api/v1' + path, {
@@ -343,7 +418,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
 
-  if (name === 'history') loadHistory();
+  if (name === 'history') { loadHistory(); }
   if (name === 'functions') { loadFunctions(); loadFuncStats(); }
   if (name === 'settings') loadSettingsTab('prompts');
 }
@@ -445,7 +520,8 @@ async function sendMessage() {
   const spinner = appendMsg('system', '처리 중...');
 
   try {
-    const res = await AGENT('/agent/decide_and_act', {
+    const endpoint = pipelineMode ? '/agent/pipeline' : '/agent/decide_and_act';
+    const res = await AGENT(endpoint, {
       conversation_id: currentConvoId,
       history: currentHistory,
       user_input: text
@@ -461,11 +537,20 @@ async function sendMessage() {
   loadConvoList();
 }
 
+function togglePipelineMode() {
+  pipelineMode = !pipelineMode;
+  const btn = document.getElementById('btn-pipeline');
+  btn.classList.toggle('active', pipelineMode);
+  btn.title = pipelineMode ? '파이프라인 모드 ON (클릭하여 해제)' : '4층 파이프라인 모드 전환';
+}
+
 async function handleAgentResponse(res) {
-  if (res.status === 'PLAN_CONFIRMATION') {
+  if (res.status === 'DESIGN_CONFIRMATION') {
+    appendDesignCard(res.message || '', res);
+    setBusy(false);
+  } else if (res.status === 'PLAN_CONFIRMATION') {
     appendPlanCard(res.execution_group, executeGroup);
     setBusy(false); // 사용자가 확인 버튼 누를 때까지 대기
-    // 확인 버튼이 setBusy(true) 후 executeGroup 호출
   } else if (res.status === 'STEP_EXECUTED') {
     appendMsg('system', res.message || '단계 실행 완료');
     await planNext();
@@ -478,6 +563,56 @@ async function handleAgentResponse(res) {
     setBusy(false);
   } else {
     appendMsg('system', JSON.stringify(res));
+    setBusy(false);
+  }
+}
+
+function appendDesignCard(message) {
+  const el = document.getElementById('chat-messages');
+  const d = document.createElement('div');
+  d.className = 'design-card';
+  const h4 = document.createElement('h4');
+  h4.textContent = '🎨 설계안';
+  const p = document.createElement('p');
+  p.textContent = message;
+  const actions = document.createElement('div');
+  actions.className = 'plan-actions';
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn-confirm';
+  confirmBtn.textContent = '✅ 설계 확인';
+  confirmBtn.onclick = () => sendPipelineAction('confirm_design', d);
+  const rejectBtn = document.createElement('button');
+  rejectBtn.className = 'btn-cancel';
+  rejectBtn.textContent = '❌ 거절';
+  rejectBtn.onclick = () => sendPipelineAction('reject_design', d);
+  actions.appendChild(confirmBtn);
+  actions.appendChild(rejectBtn);
+  d.appendChild(h4);
+  d.appendChild(p);
+  d.appendChild(actions);
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+  return d;
+}
+
+async function sendPipelineAction(action, cardEl) {
+  const actionsEl = cardEl.querySelector('.plan-actions');
+  if (actionsEl) actionsEl.remove();
+  setBusy(true);
+  const spinnerText = action === 'confirm_design' ? '설계 확인 중...' : '재설계 중...';
+  const spinner = appendMsg('system', spinnerText);
+  try {
+    const res = await AGENT('/agent/pipeline', {
+      conversation_id: currentConvoId,
+      history: currentHistory,
+      pipeline_action: action
+    });
+    spinner.remove();
+    currentHistory = res.history || currentHistory;
+    await handleAgentResponse(res);
+  } catch(e) {
+    spinner.remove();
+    appendMsg('error', '파이프라인 오류: ' + e.message);
     setBusy(false);
   }
 }
@@ -515,6 +650,34 @@ async function planNext() {
     spinner.remove();
     appendMsg('error', '재계획 실패: ' + e.message);
     setBusy(false);
+  }
+}
+
+// ═══ 대화이력 서브탭 ═══
+function switchHistSubTab(name) {
+  document.getElementById('hist-sub-convos').style.display = name === 'convos' ? '' : 'none';
+  document.getElementById('hist-sub-groups').style.display = name === 'groups' ? '' : 'none';
+  document.getElementById('hist-sub-convos-btn').classList.toggle('active', name === 'convos');
+  document.getElementById('hist-sub-groups-btn').classList.toggle('active', name === 'groups');
+  if (name === 'groups') loadGroups();
+}
+
+async function loadGroups() {
+  const list = await API('/groups');
+  const tbody = document.getElementById('groups-tbody');
+  if (!list || !list.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">그룹 없음</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  for (const g of list) {
+    const tr = document.createElement('tr');
+    [g.group_id || g.id, g.description || '', g.conversation_id || ''].forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = String(val);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
   }
 }
 
@@ -584,19 +747,89 @@ async function loadFunctions() {
     if (!groups[f.module_group]) groups[f.module_group] = [];
     groups[f.module_group].push(f);
   }
-  el.innerHTML = Object.entries(groups).map(([grp, fns]) => `
-    <div class="func-group-header" onclick="toggleGroup(this)">
-      ${escapeHtml(grp)} <span>${fns.length}개 ▾</span>
-    </div>
-    <div class="func-group-body">
-      ${fns.map(f => `
-        <div class="func-row" onclick="showFuncCode(this,'${escapeHtml(f.func_name)}')">
-          <div class="func-name">${escapeHtml(f.func_name)} <small style="color:#555">v${f.version}</small></div>
-          <div class="func-desc">${escapeHtml(f.description||'설명 없음')}</div>
-        </div>
-        <pre class="code-view" style="display:none">${escapeHtml(f.code||'')}</pre>
-      `).join('')}
-    </div>`).join('');
+  const container = document.createElement('div');
+  for (const [grp, fns] of Object.entries(groups)) {
+    const hdr = document.createElement('div');
+    hdr.className = 'func-group-header';
+    hdr.onclick = () => toggleGroup(hdr);
+    hdr.innerHTML = escapeHtml(grp) + ' <span>' + fns.length + '개 ▾</span>';
+    container.appendChild(hdr);
+    const body = document.createElement('div');
+    body.className = 'func-group-body';
+    for (const f of fns) {
+      const row = document.createElement('div');
+      row.className = 'func-row';
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'func-name';
+      nameDiv.textContent = f.func_name;
+      const vSmall = document.createElement('small');
+      vSmall.style.color = '#555';
+      vSmall.textContent = ' v' + f.version;
+      nameDiv.appendChild(vSmall);
+      const verBtn = document.createElement('button');
+      verBtn.className = 'btn-icon';
+      verBtn.style.cssText = 'font-size:12px;margin-left:8px;';
+      verBtn.title = '버전 이력';
+      verBtn.textContent = '📜 버전';
+      verBtn.onclick = (e) => { e.stopPropagation(); showFuncVersions(f.func_name); };
+      nameDiv.appendChild(verBtn);
+      const descDiv = document.createElement('div');
+      descDiv.className = 'func-desc';
+      descDiv.textContent = f.description || '설명 없음';
+      row.appendChild(nameDiv);
+      row.appendChild(descDiv);
+      row.onclick = () => showFuncCode(row, f.func_name);
+      body.appendChild(row);
+      const pre = document.createElement('pre');
+      pre.className = 'code-view';
+      pre.style.display = 'none';
+      pre.textContent = f.code || '';
+      body.appendChild(pre);
+    }
+    container.appendChild(body);
+  }
+  el.innerHTML = '';
+  el.appendChild(container);
+}
+
+async function showFuncVersions(funcName) {
+  try {
+    const versions = await API('/functions/' + encodeURIComponent(funcName) + '/versions');
+    document.getElementById('ver-modal-title').textContent = funcName + ' 버전 이력';
+    const body = document.getElementById('ver-modal-body');
+    if (!versions || versions.detail) {
+      body.textContent = versions.detail || '버전 정보 없음';
+    } else {
+      const table = document.createElement('table');
+      table.className = 'ver-table';
+      const thead = document.createElement('thead');
+      const hrow = document.createElement('tr');
+      ['버전', '활성', '생성일', '코드 미리보기'].forEach(h => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        hrow.appendChild(th);
+      });
+      thead.appendChild(hrow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for (const v of versions) {
+        const tr = document.createElement('tr');
+        [v.version, v.is_active ? '✓' : '', (v.created_at||'').slice(0,16), (v.code||'').slice(0,50)].forEach((val, i) => {
+          const td = document.createElement('td');
+          td.textContent = val;
+          if (i === 1 && v.is_active) td.className = 'ver-active';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      body.innerHTML = '';
+      body.appendChild(table);
+    }
+    document.getElementById('ver-modal').classList.add('open');
+  } catch(e) {
+    alert('버전 이력 조회 실패: ' + e.message);
+  }
 }
 
 function toggleGroup(el) {
@@ -792,13 +1025,93 @@ async function loadMacros() {
   const list = await API('/settings/macros');
   const el = document.getElementById('macro-list');
   if (!list.length) { el.innerHTML = '<div class="empty-state">매크로 없음</div>'; return; }
-  el.innerHTML = list.map(m => `
-    <div class="prompt-item">
-      <div class="prompt-item-name">${escapeHtml(m.name)}</div>
-      <div class="prompt-item-desc">${escapeHtml(m.description||'')}</div>
-      <div style="font-size:11px;color:#555;margin-top:4px;">변수: ${(m.variables||[]).join(', ')||'없음'}</div>
-      <pre class="code-view" style="margin-top:8px;">${escapeHtml(m.template||'')}</pre>
-    </div>`).join('');
+  el.innerHTML = '';
+  for (const m of list) {
+    const div = document.createElement('div');
+    div.className = 'prompt-item';
+    const hdr = document.createElement('div');
+    hdr.className = 'prompt-item-header';
+    const nameSpan = document.createElement('div');
+    const n = document.createElement('span');
+    n.className = 'prompt-item-name';
+    n.textContent = m.name;
+    nameSpan.appendChild(n);
+    const btns = document.createElement('div');
+    btns.style.display = 'flex';
+    btns.style.gap = '4px';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-sm btn-edit';
+    editBtn.textContent = '✎수정';
+    editBtn.onclick = () => openMacroModal(m);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-sm btn-del';
+    delBtn.textContent = '🗑삭제';
+    delBtn.onclick = () => deleteMacro(m.name);
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+    hdr.appendChild(nameSpan);
+    hdr.appendChild(btns);
+    const desc = document.createElement('div');
+    desc.className = 'prompt-item-desc';
+    desc.textContent = m.description || '';
+    const vars = document.createElement('div');
+    vars.style.cssText = 'font-size:11px;color:#555;margin-top:4px;';
+    vars.textContent = '변수: ' + ((m.variables || []).join(', ') || '없음');
+    const pre = document.createElement('pre');
+    pre.className = 'code-view';
+    pre.style.marginTop = '8px';
+    pre.textContent = m.template || '';
+    div.appendChild(hdr);
+    div.appendChild(desc);
+    div.appendChild(vars);
+    div.appendChild(pre);
+    el.appendChild(div);
+  }
+}
+
+function openMacroModal(m) {
+  editingMacroName = m ? m.name : null;
+  document.getElementById('macro-modal-title').textContent = m ? '매크로 편집: ' + m.name : '매크로 추가';
+  document.getElementById('mf-name').value = m ? m.name : '';
+  document.getElementById('mf-name').disabled = !!m;
+  document.getElementById('mf-desc').value = m ? (m.description || '') : '';
+  document.getElementById('mf-template').value = m ? (m.template || '') : '';
+  updateMacroVars(m ? (m.variables || []) : []);
+  document.getElementById('macro-modal').classList.add('open');
+}
+
+function updateMacroVars(vars) {
+  const el = document.getElementById('mf-vars');
+  el.textContent = vars.length ? vars.join(', ') : '(없음)';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const tpl = document.getElementById('mf-template');
+  if (tpl) tpl.addEventListener('input', () => {
+    const matches = [...tpl.value.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]);
+    const unique = [...new Set(matches)];
+    updateMacroVars(unique);
+  });
+});
+
+async function saveMacro() {
+  const name = document.getElementById('mf-name').value.trim();
+  const template = document.getElementById('mf-template').value.trim();
+  if (!name || !template) { alert('이름과 템플릿은 필수입니다.'); return; }
+  const body = { name, template, description: document.getElementById('mf-desc').value };
+  if (editingMacroName) {
+    await API('/settings/macros/' + encodeURIComponent(editingMacroName), { method: 'PUT', body: JSON.stringify(body) });
+  } else {
+    await API('/settings/macros', { method: 'POST', body: JSON.stringify(body) });
+  }
+  closeModal('macro-modal');
+  await loadMacros();
+}
+
+async function deleteMacro(name) {
+  if (!confirm('매크로 "' + name + '"을 삭제하시겠습니까?')) return;
+  await API('/settings/macros/' + encodeURIComponent(name), { method: 'DELETE' });
+  await loadMacros();
 }
 
 // 워크플로우
@@ -806,12 +1119,75 @@ async function loadWorkflows() {
   const list = await API('/settings/workflows');
   const el = document.getElementById('workflow-list');
   if (!list.length) { el.innerHTML = '<div class="empty-state">워크플로우 없음</div>'; return; }
-  el.innerHTML = list.map(w => `
-    <div class="prompt-item">
-      <div class="prompt-item-name">${escapeHtml(w.name)}</div>
-      <div class="prompt-item-desc">${escapeHtml(w.description||'')}</div>
-      <div style="font-size:11px;color:#555;margin-top:4px;">단계 수: ${(w.steps||[]).length}</div>
-    </div>`).join('');
+  el.innerHTML = '';
+  for (const w of list) {
+    const div = document.createElement('div');
+    div.className = 'prompt-item';
+    const hdr = document.createElement('div');
+    hdr.className = 'prompt-item-header';
+    const nameSpan = document.createElement('div');
+    const n = document.createElement('span');
+    n.className = 'prompt-item-name';
+    n.textContent = w.name;
+    nameSpan.appendChild(n);
+    const btns = document.createElement('div');
+    btns.style.display = 'flex';
+    btns.style.gap = '4px';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-sm btn-edit';
+    editBtn.textContent = '✎수정';
+    editBtn.onclick = () => openWorkflowModal(w);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-sm btn-del';
+    delBtn.textContent = '🗑삭제';
+    delBtn.onclick = () => deleteWorkflow(w.name);
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+    hdr.appendChild(nameSpan);
+    hdr.appendChild(btns);
+    const desc = document.createElement('div');
+    desc.className = 'prompt-item-desc';
+    desc.textContent = w.description || '';
+    const steps = document.createElement('div');
+    steps.style.cssText = 'font-size:11px;color:#555;margin-top:4px;';
+    steps.textContent = '단계 수: ' + (w.steps || []).length;
+    div.appendChild(hdr);
+    div.appendChild(desc);
+    div.appendChild(steps);
+    el.appendChild(div);
+  }
+}
+
+function openWorkflowModal(w) {
+  editingWorkflowName = w ? w.name : null;
+  document.getElementById('wf-modal-title').textContent = w ? '워크플로우 편집: ' + w.name : '워크플로우 추가';
+  document.getElementById('wff-name').value = w ? w.name : '';
+  document.getElementById('wff-name').disabled = !!w;
+  document.getElementById('wff-desc').value = w ? (w.description || '') : '';
+  document.getElementById('wff-steps').value = w ? JSON.stringify(w.steps || [], null, 2) : '';
+  document.getElementById('workflow-modal').classList.add('open');
+}
+
+async function saveWorkflow() {
+  const name = document.getElementById('wff-name').value.trim();
+  const stepsStr = document.getElementById('wff-steps').value.trim();
+  if (!name) { alert('이름은 필수입니다.'); return; }
+  let steps;
+  try { steps = stepsStr ? JSON.parse(stepsStr) : []; } catch { alert('단계가 유효한 JSON이 아닙니다.'); return; }
+  const body = { name, steps, description: document.getElementById('wff-desc').value };
+  if (editingWorkflowName) {
+    await API('/settings/workflows/' + encodeURIComponent(editingWorkflowName), { method: 'PUT', body: JSON.stringify(body) });
+  } else {
+    await API('/settings/workflows', { method: 'POST', body: JSON.stringify(body) });
+  }
+  closeModal('workflow-modal');
+  await loadWorkflows();
+}
+
+async function deleteWorkflow(name) {
+  if (!confirm('워크플로우 "' + name + '"을 삭제하시겠습니까?')) return;
+  await API('/settings/workflows/' + encodeURIComponent(name), { method: 'DELETE' });
+  await loadWorkflows();
 }
 
 // ═══ 초기화 ═══

@@ -89,17 +89,19 @@ class TestGenerateFinalAnswer:
                 await ollama_client.generate_final_answer(history=["히스토리"])
 
     @pytest.mark.asyncio
-    async def test_error_fallback_returns_last_result(self):
+    async def test_error_propagates(self):
+        """예외는 상위(_call_with_fallback)로 전파되어 폴백 체인이 동작해야 함."""
         history = ["  - 실행 결과: 파일 목록: ['a.txt']"]
         with patch.object(ollama_client, "_ollama_chat", side_effect=Exception("오류")):
-            result = await ollama_client.generate_final_answer(history=history)
-        assert "a.txt" in result
+            with pytest.raises(Exception, match="오류"):
+                await ollama_client.generate_final_answer(history=history)
 
     @pytest.mark.asyncio
-    async def test_error_fallback_no_result_in_history(self):
+    async def test_error_propagates_empty_history(self):
+        """히스토리가 없어도 예외는 전파됨."""
         with patch.object(ollama_client, "_ollama_chat", side_effect=Exception("오류")):
-            result = await ollama_client.generate_final_answer(history=["일반 메시지"])
-        assert "실패" in result
+            with pytest.raises(Exception, match="오류"):
+                await ollama_client.generate_final_answer(history=["일반 메시지"])
 
 
 # ── extract_keywords ──────────────────────────────────────────────

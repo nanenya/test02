@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# orchestrator/claude_client.py
+# orchestrator/grok_client.py
+# OpenAI 호환 API — xAI Grok 프로바이더
 
 import httpx
 import os
@@ -21,12 +22,14 @@ from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
 
-_api_key = os.getenv("ANTHROPIC_API_KEY")
+_api_key = os.getenv("XAI_API_KEY")
 if not _api_key:
-    logging.warning("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다. Claude API 호출 시 오류가 발생합니다.")
+    logging.warning("XAI_API_KEY 환경변수가 설정되지 않았습니다. Grok API 호출 시 오류가 발생합니다.")
 
-HIGH_PERF_MODEL_NAME = os.getenv("CLAUDE_HIGH_PERF_MODEL", "claude-sonnet-4-6")
-STANDARD_MODEL_NAME = os.getenv("CLAUDE_STANDARD_MODEL", "claude-haiku-4-5-20251001")
+HIGH_PERF_MODEL_NAME = os.getenv("GROK_HIGH_PERF_MODEL", "grok-3")
+STANDARD_MODEL_NAME = os.getenv("GROK_STANDARD_MODEL", "grok-3-mini")
+
+_BASE_URL = "https://api.x.ai/v1/chat/completions"
 
 ModelPreference = Literal["auto", "standard", "high"]
 
@@ -44,45 +47,35 @@ def _get_model_name(
     return STANDARD_MODEL_NAME
 
 
-async def _call_claude(
-    system: str,
-    user: str,
+async def _call_grok(
+    prompt: str,
+    system_prompt: str,
     model: str,
-    json_mode: bool = False,
+    json_format: bool = False,
 ) -> str:
-    """Claude Messages API 호출 내부 헬퍼."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    """xAI Grok API 호출 내부 헬퍼 (OpenAI 호환 엔드포인트)."""
+    api_key = os.getenv("XAI_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY가 설정되지 않았습니다. .env 파일에 ANTHROPIC_API_KEY를 설정해주세요.")
-
-    if not user or not user.strip():
-        raise ValueError("Claude API 호출 실패: user 메시지가 비어 있습니다.")
+        raise RuntimeError("XAI_API_KEY가 설정되지 않았습니다. .env 파일에 XAI_API_KEY를 설정해주세요.")
 
     payload: Dict[str, Any] = {
         "model": model,
         "max_tokens": 4096,
-        "messages": [{"role": "user", "content": user}],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
     }
-    # system이 빈 문자열이면 Anthropic API가 400을 반환하므로 제외
-    if system and system.strip():
-        payload["system"] = system
+    if json_format:
+        payload["response_format"] = {"type": "json_object"}
 
     headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=payload,
-        )
-        if resp.status_code >= 400:
-            logging.error(
-                f"Claude API 오류 [{resp.status_code}] model={model}: {resp.text}"
-            )
+        resp = await client.post(_BASE_URL, headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
 
@@ -90,31 +83,29 @@ async def _call_claude(
     try:
         from . import token_tracker
         _usage = data.get("usage", {})
-        def _to_int(v):
-            try:
-                return int(v)
-            except Exception:
-                return None
         token_tracker.record(
-            provider="claude",
+            provider="grok",
             model=model,
-            input_tokens=_usage.get("input_tokens", 0) or 0,
-            output_tokens=_usage.get("output_tokens", 0) or 0,
-            rate_limit_limit=_to_int(resp.headers.get("anthropic-ratelimit-tokens-limit")),
-            rate_limit_remaining=_to_int(resp.headers.get("anthropic-ratelimit-tokens-remaining")),
+            input_tokens=_usage.get("prompt_tokens", 0) or 0,
+            output_tokens=_usage.get("completion_tokens", 0) or 0,
         )
     except Exception:
         pass
 
-    content_blocks = data.get("content", [])
-    if not content_blocks:
-        raise ValueError("Claude API가 빈 content를 반환했습니다.")
+    choices = data.get("choices", [])
+    if not choices:
+        raise ValueError("Grok API가 빈 choices를 반환했습니다.")
 
-    text = content_blocks[0].get("text", "")
+    text = choices[0].get("message", {}).get("content", "")
     if not text:
-        raise ValueError("Claude API가 빈 텍스트를 반환했습니다.")
+        raise ValueError("Grok API가 빈 텍스트를 반환했습니다.")
 
     return text
+
+
+async def _call_unified(system: str, user: str, model: str, json_mode: bool = False) -> str:
+    """_llm_utils 통합 시그니처용 어댑터."""
+    return await _call_grok(prompt=user, system_prompt=system, model=model, json_format=json_mode)
 
 
 async def generate_execution_plan(
@@ -125,10 +116,6 @@ async def generate_execution_plan(
     system_prompts: List[str] = None,
     allowed_skills: Optional[List[str]] = None,
 ) -> List[ExecutionGroup]:
-    """
-    ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
-    목표가 완료되면 빈 리스트 []를 반환합니다.
-    """
     model_name = _get_model_name(model_preference, default_type="high")
     tool_descriptions = get_filtered_tool_descriptions(allowed_skills)
     formatted_history = _truncate_history(history)
@@ -144,7 +131,7 @@ async def generate_execution_plan(
     )
 
     try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
+        text = await _call_grok(prompt=user, system_prompt=system, model=model_name, json_format=True)
         text = _extract_json_block(text)
         parsed_json = json.loads(text)
 
@@ -167,26 +154,33 @@ async def generate_execution_plan(
 
 async def generate_final_answer(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
     model_name = _get_model_name(model_preference, default_type="standard")
     system = _acm.get_prompt("final_answer_system")
     history_str = _truncate_history(history)
     user = _acm.render_prompt("final_answer_user", history_str=history_str)
 
-    text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)
-    return text.strip()
+    try:
+        text = await _call_grok(prompt=user, system_prompt=system, model=model_name, json_format=False)
+        return text.strip()
+    except Exception as e:
+        logging.error(f"generate_final_answer 오류: {e}", exc_info=True)
+        last_result = next((item for item in reversed(history) if item.startswith("  - 실행 결과:")), None)
+        if last_result:
+            return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
+        else:
+            return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
 
 
 async def extract_keywords(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> List[str]:
-    """Claude로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함)."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("XAI_API_KEY"):
         return []
     return await extract_keywords_with_caller(
-        _call_claude, history, _get_model_name(model_preference, default_type="standard")
+        _call_unified, history, _get_model_name(model_preference, default_type="standard")
     )
 
 
@@ -194,22 +188,19 @@ async def detect_topic_split(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> Optional[Dict[str, Any]]:
-    """Claude로 주제 전환 지점 감지. 실패 시 None 반환.
-    반환: {"detected": bool, "split_index": int, "reason": str,
-           "topic_a": str, "topic_b": str}"""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("XAI_API_KEY"):
         return None
     return await detect_topic_split_with_caller(
-        _call_claude, history, _get_model_name(model_preference, default_type="standard")
+        _call_unified, history, _get_model_name(model_preference, default_type="standard")
     )
 
 
 async def generate_title_for_conversation(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("XAI_API_KEY"):
         return "Untitled_Conversation"
     return await generate_title_with_caller(
-        _call_claude, history, _get_model_name(model_preference, default_type="standard")
+        _call_unified, history, _get_model_name(model_preference, default_type="standard")
     )

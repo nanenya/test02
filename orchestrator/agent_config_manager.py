@@ -17,6 +17,24 @@ from .graph_manager import DB_PATH, get_db
 # ── 인메모리 프롬프트 캐시 ────────────────────────────────────────
 _PROMPT_CACHE: dict[str, str] = {}
 
+# 매크로 변수 패턴 {{var}}
+_MACRO_VAR_RE = re.compile(r'\{\{(\w+)\}\}')
+
+
+def _apply_update(conn, table: str, name: str, now: str, **fields) -> None:
+    """동적 UPDATE 쿼리를 빌드하여 실행합니다.
+
+    fields에 포함된 None 값은 무시됩니다.
+    """
+    clauses = ["updated_at=?"]
+    params: List[Any] = [now]
+    for col, val in fields.items():
+        if val is not None:
+            clauses.append(f"{col}=?")
+            params.append(val)
+    params.append(name)
+    conn.execute(f"UPDATE {table} SET {', '.join(clauses)} WHERE name=?", params)
+
 
 # ── DB 초기화 ─────────────────────────────────────────────────────
 
@@ -257,6 +275,53 @@ JSON 형식으로만 응답하세요:
 위 요청이 단순 질문/대화('chat')인지, 파일·코드·시스템 도구 사용이 필요한 작업('task')인지 한 단어로만 답하세요: chat 또는 task""",
     ),
     (
+        "classify_intent_full_user",
+        "template",
+        "5-카테고리 의도 분류 템플릿 (변수: user_query)",
+        """사용자 요청을 아래 5개 카테고리 중 하나로 분류하세요.
+
+카테고리:
+- dialogue: 단순 질문, 설명 요청, 대화 (도구 불필요)
+- code_write: 코드 작성/수정/리팩터링/버그 수정
+- file_ops: 파일/디렉토리 생성/읽기/수정/삭제
+- web_search: 정보 검색, 웹 조회, 문서 조회
+- analysis: 코드/데이터/로그 분석, 리뷰, 설명
+
+요청: {user_query}
+
+응답은 카테고리 이름 하나만 출력하세요 (다른 내용 없이).""",
+    ),
+    (
+        "intent_code_write_system",
+        "system",
+        "코드 작성 의도 시스템 프롬프트",
+        "당신은 전문 소프트웨어 엔지니어입니다. 코드 품질, 가독성, 유지보수성을 최우선으로 합니다. 기존 코드 스타일을 유지하고 테스트 가능한 코드를 작성합니다.",
+    ),
+    (
+        "intent_file_ops_system",
+        "system",
+        "파일 조작 의도 시스템 프롬프트",
+        "당신은 파일 및 디렉토리 조작 전문가입니다. 안전한 파일 처리, 원자적 쓰기, 백업 전략을 우선합니다. 삭제·덮어쓰기 전 반드시 확인합니다.",
+    ),
+    (
+        "intent_search_system",
+        "system",
+        "웹 검색 의도 시스템 프롬프트",
+        "당신은 정보 검색 전문가입니다. 정확한 출처를 명시하고, 여러 소스를 교차 검증합니다. 검색 결과를 구조화하여 제공합니다.",
+    ),
+    (
+        "intent_analysis_system",
+        "system",
+        "분석 의도 시스템 프롬프트",
+        "당신은 코드 분석 전문가입니다. 데이터를 읽고 패턴을 발견하며 구체적인 개선점을 제시합니다. 분석 근거를 명확히 설명합니다.",
+    ),
+    (
+        "intent_dialogue_system",
+        "system",
+        "대화 의도 시스템 프롬프트",
+        "당신은 친절하고 전문적인 AI 어시스턴트입니다. 명확하고 간결하게 답변합니다.",
+    ),
+    (
         "design_user",
         "template",
         "설계 생성 템플릿 (변수: system_ctx, history_ctx, user_query)",
@@ -378,6 +443,43 @@ JSON 배열로 반환 (학습 가치 있는 항목만, 없으면 []):
 [{{"category":"conventions|successes|failures|gotchas|commands","content":"내용","source_tool":"도구명"}}]
 
 category 의미: conventions=코딩규칙, successes=성공패턴, failures=실패/오류, gotchas=주의사항, commands=유용한명령어""",
+    ),
+    (
+        "react_planner_parallel_note",
+        "system",
+        "병렬 플래닝 모드 추가 지시사항 (react_planner_system에 덧붙임)",
+        """[병렬 실행 모드 활성화]
+여러 그룹 반환이 허용됩니다. 다음 기준으로 그룹을 분리하세요:
+- 서로 입출력 의존이 없는 태스크 → 별도 그룹, "can_parallel": true
+- 이전 그룹 결과가 필요한 태스크 → 별도 그룹, "can_parallel": false
+- 단, 진정 독립적인 경우만 can_parallel: true로 설정 (의존성 있는데 병렬로 표시 금지)
+
+완료 시 빈 리스트 []를 반환하세요.""",
+    ),
+    (
+        "classify_intent_and_category_user",
+        "template",
+        "의도 + 복잡도 통합 분류 템플릿 (변수: user_query)",
+        """사용자 요청을 분석하여 아래 두 값을 반환하세요.
+
+요청: {user_query}
+
+[intent] 다음 중 하나:
+- dialogue: 단순 질문, 설명, 대화 (도구 불필요)
+- code_write: 코드 작성/수정/리팩터링
+- file_ops: 파일/디렉토리 생성/수정/삭제
+- web_search: 정보 검색, 웹 조회
+- analysis: 코드/데이터/로그 분석
+
+[complexity] 다음 중 하나:
+- quick: 단순 작업 (5단어 이내 또는 사소한 변경)
+- deep: 일반 작업
+- ultrabrain: 전체 아키텍처/설계/대규모 리팩터링
+- visual: UI/CSS/화면/디자인 관련
+
+두 값만 아래 형식으로 출력 (다른 내용 없이):
+intent: <값>
+complexity: <값>""",
     ),
     (
         "validate_plan_user",
@@ -531,22 +633,15 @@ def update_system_prompt(
             return False
         if is_default is True:
             conn.execute("UPDATE system_prompts SET is_default=0 WHERE is_default=1")
-        fields = ["updated_at=?"]
-        params: List[Any] = [now]
-        if content is not None:
-            fields.append("content=?")
-            params.append(content)
-        if description is not None:
-            fields.append("description=?")
-            params.append(description)
-        if is_default is not None:
-            fields.append("is_default=?")
-            params.append(int(is_default))
-        params.append(name)
-        conn.execute(
-            f"UPDATE system_prompts SET {', '.join(fields)} WHERE name=?", params
-        )
-        _PROMPT_CACHE.pop(name, None)
+        try:
+            _apply_update(
+                conn, "system_prompts", name, now,
+                content=content,
+                description=description,
+                is_default=int(is_default) if is_default is not None else None,
+            )
+        finally:
+            _PROMPT_CACHE.pop(name, None)
         return True
 
 
@@ -677,7 +772,7 @@ def create_macro(
 ) -> int:
     """스킬 매크로 생성. variables 미제공 시 {{var}} 패턴으로 자동 추출."""
     if variables is None:
-        variables = re.findall(r'\{\{(\w+)\}\}', template)
+        variables = _MACRO_VAR_RE.findall(template)
     now = utcnow()
     with get_db(db_path) as conn:
         cur = conn.execute(
@@ -725,22 +820,13 @@ def update_macro(
         ).fetchone()
         if not existing:
             return False
-        fields = ["updated_at=?"]
-        params: List[Any] = [now]
-        if template is not None:
-            fields.append("template=?")
-            params.append(template)
-            if variables is None:
-                variables = re.findall(r'\{\{(\w+)\}\}', template)
-        if description is not None:
-            fields.append("description=?")
-            params.append(description)
-        if variables is not None:
-            fields.append("variables=?")
-            params.append(json.dumps(variables, ensure_ascii=False))
-        params.append(name)
-        conn.execute(
-            f"UPDATE skill_macros SET {', '.join(fields)} WHERE name=?", params
+        if template is not None and variables is None:
+            variables = _MACRO_VAR_RE.findall(template)
+        _apply_update(
+            conn, "skill_macros", name, now,
+            template=template,
+            description=description,
+            variables=json.dumps(variables, ensure_ascii=False) if variables is not None else None,
         )
         return True
 
@@ -821,17 +907,10 @@ def update_workflow(
         ).fetchone()
         if not existing:
             return False
-        fields = ["updated_at=?"]
-        params: List[Any] = [now]
-        if steps is not None:
-            fields.append("steps=?")
-            params.append(json.dumps(steps, ensure_ascii=False))
-        if description is not None:
-            fields.append("description=?")
-            params.append(description)
-        params.append(name)
-        conn.execute(
-            f"UPDATE workflows SET {', '.join(fields)} WHERE name=?", params
+        _apply_update(
+            conn, "workflows", name, now,
+            steps=json.dumps(steps, ensure_ascii=False) if steps is not None else None,
+            description=description,
         )
         return True
 
@@ -927,32 +1006,15 @@ def update_persona(
             return False
         if is_default is True:
             conn.execute("UPDATE personas SET is_default=0 WHERE is_default=1")
-        fields = ["updated_at=?"]
-        params: List[Any] = [now]
-        if system_prompt is not None:
-            fields.append("system_prompt=?")
-            params.append(system_prompt)
-        if allowed_skills is not None:
-            fields.append("allowed_skills=?")
-            params.append(json.dumps(allowed_skills, ensure_ascii=False))
-        if keywords is not None:
-            fields.append("keywords=?")
-            params.append(json.dumps(keywords, ensure_ascii=False))
-        if description is not None:
-            fields.append("description=?")
-            params.append(description)
-        if display_name is not None:
-            fields.append("display_name=?")
-            params.append(display_name)
-        if system_prompt_ref is not None:
-            fields.append("system_prompt_ref=?")
-            params.append(system_prompt_ref)
-        if is_default is not None:
-            fields.append("is_default=?")
-            params.append(int(is_default))
-        params.append(name)
-        conn.execute(
-            f"UPDATE personas SET {', '.join(fields)} WHERE name=?", params
+        _apply_update(
+            conn, "personas", name, now,
+            system_prompt=system_prompt,
+            allowed_skills=json.dumps(allowed_skills, ensure_ascii=False) if allowed_skills is not None else None,
+            keywords=json.dumps(keywords, ensure_ascii=False) if keywords is not None else None,
+            description=description,
+            display_name=display_name,
+            system_prompt_ref=system_prompt_ref,
+            is_default=int(is_default) if is_default is not None else None,
         )
         return True
 

@@ -35,50 +35,62 @@ class TestTruncateHistory:
         assert "a" in result
 
     def test_default_max_chars_is_constant(self):
-        """기본 max_chars가 DEFAULT_HISTORY_MAX_CHARS 상수와 일치"""
-        assert gc.DEFAULT_HISTORY_MAX_CHARS == 6000
+        """기본 max_chars가 HISTORY_MAX_CHARS 상수와 일치"""
+        from .constants import HISTORY_MAX_CHARS
+        assert HISTORY_MAX_CHARS == 6000
+
+
+_FAKE_CONFIG = {
+    "active_provider": "gemini",
+    "active_model": "models/gemini-test-active",
+    "providers": {
+        "gemini": {
+            "high_model": "models/gemini-test-high",
+            "standard_model": "models/gemini-test-standard",
+        }
+    },
+}
 
 
 class TestGetModelName:
     def test_high_preference(self):
-        """model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환"""
-        result = gc._get_model_name("high")
-        assert result == gc.HIGH_PERF_MODEL_NAME
+        """model_preference='high'이면 providers.gemini.high_model 반환"""
+        with patch("orchestrator.model_manager.load_config", return_value=_FAKE_CONFIG):
+            result = gc._get_model_name("high")
+            assert result == "models/gemini-test-high"
 
     def test_standard_preference(self):
-        """model_preference='standard'이면 STANDARD_MODEL_NAME 반환"""
-        result = gc._get_model_name("standard")
-        assert result == gc.STANDARD_MODEL_NAME
+        """model_preference='standard'이면 providers.gemini.standard_model 반환"""
+        with patch("orchestrator.model_manager.load_config", return_value=_FAKE_CONFIG):
+            result = gc._get_model_name("standard")
+            assert result == "models/gemini-test-standard"
 
     def test_auto_uses_config_active_model(self):
-        """auto 모드는 model_config.json의 active_model 우선 반환"""
-        with patch("orchestrator.model_manager.load_config", return_value={
-            "active_provider": "gemini", "active_model": "gemini-test-model"
-        }):
+        """auto 모드는 active_model 우선 반환"""
+        with patch("orchestrator.model_manager.load_config", return_value=_FAKE_CONFIG):
             result = gc._get_model_name("auto", default_type="high")
-            assert result == "gemini-test-model"
+            assert result == "models/gemini-test-active"
 
     def test_auto_with_high_default_fallback(self):
-        """auto + active_model 비어있을 때 default_type='high'이면 HIGH_PERF_MODEL_NAME 폴백"""
-        with patch("orchestrator.model_manager.load_config", return_value={
-            "active_provider": "gemini", "active_model": ""
-        }):
+        """auto + active_model 비어있을 때 default_type='high'이면 high_model 폴백"""
+        cfg = {**_FAKE_CONFIG, "active_model": ""}
+        with patch("orchestrator.model_manager.load_config", return_value=cfg):
             result = gc._get_model_name("auto", default_type="high")
-            assert result == gc.HIGH_PERF_MODEL_NAME
+            assert result == "models/gemini-test-high"
 
     def test_auto_with_standard_default_fallback(self):
-        """auto + active_model 비어있을 때 default_type='standard'이면 STANDARD_MODEL_NAME 폴백"""
-        with patch("orchestrator.model_manager.load_config", return_value={
-            "active_provider": "gemini", "active_model": ""
-        }):
+        """auto + active_model 비어있을 때 default_type='standard'이면 standard_model 폴백"""
+        cfg = {**_FAKE_CONFIG, "active_model": ""}
+        with patch("orchestrator.model_manager.load_config", return_value=cfg):
             result = gc._get_model_name("auto", default_type="standard")
-            assert result == gc.STANDARD_MODEL_NAME
+            assert result == "models/gemini-test-standard"
 
-    def test_auto_fallback_on_exception(self):
-        """auto + model_manager 오류 시 default_type 폴백"""
-        with patch("orchestrator.model_manager.load_config", side_effect=Exception("fail")):
-            result = gc._get_model_name("auto", default_type="high")
-            assert result == gc.HIGH_PERF_MODEL_NAME
+    def test_high_falls_back_to_active_when_no_high_model(self):
+        """high_model 미설정 시 active_model로 폴백"""
+        cfg = {"active_model": "models/gemini-active", "providers": {"gemini": {}}}
+        with patch("orchestrator.model_manager.load_config", return_value=cfg):
+            result = gc._get_model_name("high")
+            assert result == "models/gemini-active"
 
 
 class TestGenerateExecutionPlan:
@@ -110,6 +122,6 @@ class TestGenerateTitleForConversation:
     @pytest.mark.asyncio
     async def test_short_history_returns_new_conversation(self):
         """history가 2개 미만이면 '새로운_대화' 반환"""
-        with patch.object(gc, "client", MagicMock()):
+        with patch.object(gc, "client", AsyncMock()):
             result = await gc.generate_title_for_conversation(["single"])
             assert result == "새로운_대화"

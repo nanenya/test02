@@ -8,17 +8,28 @@ from fastapi.staticfiles import StaticFiles
 from .models import AgentRequest, AgentResponse, ExecutionGroup, WisdomEntry, PlanValidation
 from .llm_client import (
     generate_execution_plan,
+    generate_parallel_plan,
     generate_final_answer,
     generate_title_for_conversation,
     extract_keywords,
     detect_topic_split,
     classify_intent,
+    classify_intent_full,
+    classify_intent_and_category,
     extract_wisdom,
     validate_execution_plan,
     classify_task_category,
+    summarize_history,
     _get_model_for_category,
 )
-from .constants import PLAN_VALIDATION_MIN_SCORE
+from .constants import (
+    PLAN_VALIDATION_MIN_SCORE,
+    HISTORY_AUTO_SUMMARIZE_THRESHOLD,
+    HISTORY_KEEP_RECENT,
+    HISTORY_SUMMARY_MARKER,
+    USER_REQUEST_PREFIX,
+    TOOL_RESULT_TRUNCATED_SUFFIX,
+)
 
 from . import tool_registry
 from . import history_manager
@@ -39,13 +50,79 @@ from . import issue_tracker
 from . import token_tracker
 
 
-from .constants import MAX_HISTORY_ENTRIES, MAX_TOOL_RESULT_LENGTH, MAX_REQUIREMENT_FILE_SIZE
+from .constants import (
+    MAX_HISTORY_ENTRIES, MAX_TOOL_RESULT_LENGTH, MAX_REQUIREMENT_FILE_SIZE,
+    RECENT_HISTORY_ITEMS, RESULT_HISTORY_ITEMS,
+)
 
 
 def _resp(**kwargs) -> AgentResponse:
     """token_usage를 자동으로 포함한 AgentResponse를 생성합니다."""
     kwargs.setdefault("token_usage", token_tracker.get_accumulated())
     return AgentResponse(**kwargs)
+
+
+def _apply_category_preference(plan_list: list) -> None:
+    """[D] 각 그룹의 category → task.model_preference 자동 적용."""
+    for group in plan_list:
+        if group.category:
+            mp = _get_model_for_category(group.category)
+            for task in group.tasks:
+                if task.model_preference == "auto":
+                    task.model_preference = mp
+
+
+async def _validate_and_replan(
+    plan_list: list,
+    query: str,
+    requirements_content: str,
+    history: list,
+    model_preference: str,
+    system_prompts: list,
+    allowed_skills,
+) -> list:
+    """[E] 계획 검증 게이트: 실패 시 1회 재계획."""
+    try:
+        available = list(tool_registry.get_all_tool_descriptions().keys())
+        validation = await validate_execution_plan(plan_list, available)
+        if not validation.valid:
+            logging.warning(f"[E-PlanGate] score={validation.score:.2f}: {validation.issues}")
+            history.append(
+                f"[계획 검증 실패 score={validation.score:.2f}]: {'; '.join(validation.issues)}"
+                f" → 개선 필요: {'; '.join(validation.suggestions)}"
+            )
+            plan_list = await generate_execution_plan(
+                user_query=query,
+                requirements_content=requirements_content,
+                history=history,
+                model_preference=model_preference,
+                system_prompts=system_prompts,
+                allowed_skills=allowed_skills,
+            )
+    except Exception as val_e:
+        logging.debug(f"[E-PlanGate] 검증 생략: {val_e}")
+    return plan_list
+
+
+def _resolve_persona(
+    provided_prompts: list,
+    provided_skills,
+    query: str,
+    persona_name,
+) -> tuple:
+    """페르소나에서 system_prompts·allowed_skills를 해석합니다.
+
+    Returns:
+        (system_prompts: list, allowed_skills) 튜플
+    """
+    if provided_prompts:
+        return provided_prompts, provided_skills
+    persona = agent_config_manager.get_effective_persona(
+        query=query, explicit_name=persona_name
+    )
+    if persona:
+        return [persona["system_prompt"]], provided_skills or persona.get("allowed_skills")
+    return [], provided_skills
 
 
 def _format_wisdom(entries: list) -> str:
@@ -61,6 +138,26 @@ def _format_wisdom(entries: list) -> str:
         for c in contents[:3]:  # 카테고리별 최근 3개
             lines.append(f"  [{cat}] {c}")
     return "\n".join(lines)
+
+
+async def _maybe_auto_summarize(history: list) -> list:
+    """임계값 초과 시 히스토리를 자동 요약합니다. 실패 시 원본 반환."""
+    if len(history) <= HISTORY_AUTO_SUMMARIZE_THRESHOLD:
+        return history
+    recent = history[-HISTORY_KEEP_RECENT:]
+    if any(HISTORY_SUMMARY_MARKER in h for h in recent if isinstance(h, str)):
+        return history  # 이미 최근에 요약 있음
+    to_summarize = history[:-HISTORY_KEEP_RECENT]
+    try:
+        summary = await summarize_history(to_summarize, model_preference="standard")
+    except Exception:
+        summary = ""
+    if not summary:
+        return history
+    logging.info(
+        f"[AutoSummarize] {len(history)}개 → {1 + HISTORY_KEEP_RECENT}개로 압축"
+    )
+    return [f"{HISTORY_SUMMARY_MARKER}\n{summary}"] + history[-HISTORY_KEEP_RECENT:]
 
 
 def _validate_requirement_path(path: str) -> str:
@@ -97,10 +194,9 @@ def _extract_first_query(history: list) -> str:
     '사용자 요청: ' 접두어로 시작하는 첫 번째 항목에서 내용을 반환합니다.
     찾지 못하면 기본 문자열을 반환합니다.
     """
-    prefix = "사용자 요청:"
     for entry in history:
-        if isinstance(entry, str) and entry.startswith(prefix):
-            return entry[len(prefix):].strip()
+        if isinstance(entry, str) and entry.startswith(USER_REQUEST_PREFIX):
+            return entry[len(USER_REQUEST_PREFIX):].strip()
     return "이전 작업을 계속하세요."
 
 
@@ -126,6 +222,67 @@ def _validate_tool_arguments(tool_function, tool_name: str, arguments: dict) -> 
         raise ValueError(
             f"도구 '{tool_name}'에 허용되지 않은 인자: {unknown}. 허용된 인자: {allowed}"
         )
+
+
+async def _execute_single_task(task, session_id) -> tuple:
+    """단일 태스크를 실행하고 (tool_name, result_str, exc | None) 튜플을 반환."""
+    t_start = time.monotonic()
+    try:
+        # P3-D: on-demand MCP 서버 지연 연결
+        await tool_registry.ensure_tool_server_connected(task.tool_name)
+
+        tool_function = tool_registry.get_tool(task.tool_name)
+        if not tool_function:
+            # on-demand 생성: discover_and_resolve 1회 시도
+            try:
+                from . import tool_discoverer
+                discovery = await tool_discoverer.discover_and_resolve([task.tool_name])
+                result_info = discovery.get(task.tool_name, {})
+                if result_info.get("status") in ("found", "python_impl"):
+                    tool_function = tool_registry.get_tool(task.tool_name)
+            except Exception as _disc_err:
+                logging.warning(f"on-demand discover 실패: {_disc_err}")
+        if not tool_function:
+            raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
+
+        providers = tool_registry.get_tool_providers(task.tool_name)
+        if len(providers) >= 2:
+            server_names = [p["server"] for p in providers]
+            logging.info(f"Tool '{task.tool_name}' has multiple providers: {server_names}")
+
+        _validate_tool_arguments(tool_function, task.tool_name, task.arguments)
+
+        if inspect.iscoroutinefunction(tool_function):
+            result = await tool_function(**task.arguments)
+        else:
+            result = tool_function(**task.arguments)
+        duration_ms = int((time.monotonic() - t_start) * 1000)
+        try:
+            mcp_db_manager.log_usage(
+                task.tool_name, success=True, session_id=session_id,
+                duration_ms=duration_ms, args_summary=",".join(task.arguments.keys()),
+            )
+        except Exception as log_err:
+            logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
+        result_str = str(result)
+        if len(result_str) > MAX_TOOL_RESULT_LENGTH:
+            logging.warning(
+                f"도구 '{task.tool_name}' 결과가 {MAX_TOOL_RESULT_LENGTH}자를 초과하여 잘렸습니다. "
+                f"(원래 길이: {len(result_str)}자)"
+            )
+            result_str = result_str[:MAX_TOOL_RESULT_LENGTH] + TOOL_RESULT_TRUNCATED_SUFFIX
+        return task.tool_name, result_str, None
+    except Exception as tool_err:
+        duration_ms = int((time.monotonic() - t_start) * 1000)
+        try:
+            mcp_db_manager.log_usage(
+                task.tool_name, success=False, session_id=session_id,
+                duration_ms=duration_ms, error_message=str(tool_err),
+                args_summary=",".join(task.arguments.keys()),
+            )
+        except Exception as log_err:
+            logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
+        return task.tool_name, "", tool_err
 
 
 @asynccontextmanager
@@ -157,10 +314,280 @@ async def _global_exception_handler(request, exc: Exception):
     )
     return JSONResponse(status_code=500, content={"detail": f"내부 서버 오류: {type(exc).__name__}"})
 
+async def _handle_new_query(
+    request: AgentRequest,
+    convo_id: str,
+    history: list,
+    effective_system_prompts: list,
+    effective_allowed_skills,
+) -> AgentResponse:
+    """신규 user_input 처리: 의도 분류 → 계획 생성 → PLAN_CONFIRMATION 반환."""
+    query = request.user_input or "무엇을 할까요?"
+
+    if request.user_input:
+        history.append(f"{USER_REQUEST_PREFIX} {query}")
+
+    # 히스토리 자동 요약 (임계값 초과 시)
+    history = await _maybe_auto_summarize(history)
+
+    # P3-C + [D]: 의도 + 복잡도 통합 분류 (단일 LLM 호출)
+    intent_full = "analysis"  # 기본값
+    task_cat = "deep"         # 기본값
+    try:
+        intent_full, task_cat = await classify_intent_and_category(
+            query, request.model_preference
+        )
+        if intent_full == "dialogue":
+            direct_answer = await generate_final_answer(history, request.model_preference)
+            history.append(f"최종 답변: {direct_answer}")
+            title_summary = await generate_title_for_conversation(history, request.model_preference)
+            history_manager.save_conversation(
+                convo_id, history, title_summary, [], 0, is_final=True
+            )
+            return _resp(
+                conversation_id=convo_id,
+                status="FINAL_ANSWER",
+                history=history,
+                message=direct_answer,
+            )
+    except Exception as intent_err:
+        logging.warning(f"IntentGate 실패, 기본값으로 진행: {intent_err}")
+
+    # 카테고리별 시스템 프롬프트 자동 주입
+    _intent_system_map = {
+        "code_write": "intent_code_write_system",
+        "file_ops":   "intent_file_ops_system",
+        "web_search": "intent_search_system",
+        "analysis":   "intent_analysis_system",
+    }
+    intent_prompt_name = _intent_system_map.get(intent_full)
+    if intent_prompt_name:
+        try:
+            intent_prompt = agent_config_manager.get_prompt(intent_prompt_name)
+            effective_system_prompts = [intent_prompt] + effective_system_prompts
+        except KeyError:
+            pass
+
+    # [C] 3-tier 자동 라우팅: ultrabrain이면 pipeline_endpoint로
+    if task_cat == "ultrabrain" and not request.force_react:
+        logging.info(f"[3-tier] 복잡 쿼리 감지 → pipeline_endpoint 라우팅")
+        return await pipeline_endpoint(request)
+
+    # P3-B: Planner 역할 프롬프트 주입
+    planner_prompts = [agent_config_manager.get_prompt("role_planner")] + effective_system_prompts
+
+    # [B] 지식 로드 및 주입
+    try:
+        wisdom_entries = graph_manager.load_wisdom(convo_id)
+        if wisdom_entries:
+            planner_prompts.append(_format_wisdom(wisdom_entries))
+    except Exception:
+        pass
+
+    requirements_content = ""
+    if request.requirement_paths:
+        history.append(f"요구사항 파일 참조: {', '.join(request.requirement_paths)}")
+        for path in request.requirement_paths:
+            try:
+                real_path = _validate_requirement_path(path)
+                with open(real_path, 'r', encoding='utf-8') as f:
+                    requirements_content += f"--- {os.path.basename(real_path)} ---\n"
+                    requirements_content += f.read()
+                    requirements_content += "\n-----------------------------------\n\n"
+            except Exception as e:
+                history.append(f"경고: 요구사항 파일 '{path}' 읽기 실패: {e}")
+
+    try:
+        _plan_fn = generate_parallel_plan if request.parallel_mode else generate_execution_plan
+        plan_list = await _plan_fn(
+            user_query=query,
+            requirements_content=requirements_content,
+            history=history,
+            model_preference=request.model_preference,
+            system_prompts=planner_prompts,
+            allowed_skills=effective_allowed_skills,
+        )
+
+        if not plan_list:
+            return _resp(
+                conversation_id=convo_id,
+                status="FINAL_ANSWER",
+                history=history,
+                message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
+            )
+
+        # [D] 카테고리 → model_preference 자동 적용
+        _apply_category_preference(plan_list)
+
+        # [E] 계획 검증 게이트
+        plan_list = await _validate_and_replan(
+            plan_list, query, requirements_content, history,
+            request.model_preference, planner_prompts, effective_allowed_skills,
+        )
+
+        if not plan_list:
+            return _resp(
+                conversation_id=convo_id,
+                status="FINAL_ANSWER",
+                history=history,
+                message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
+            )
+
+        history = _prune_history(history)
+        plan_dicts = [group.model_dump() for group in plan_list]
+        history_manager.save_conversation(
+            convo_id, history, f"계획: {plan_list[0].description[:20]}...", plan_dicts, 0, is_final=False
+        )
+
+        # 병렬 모드 or 여러 그룹 → 전체 계획 요약 표시
+        if len(plan_list) > 1:
+            parallel_count = sum(1 for g in plan_list if g.can_parallel)
+            serial_count = len(plan_list) - parallel_count
+            plan_summary = "\n".join(
+                f"  [{g.group_id}] {'⚡병렬' if g.can_parallel else '→순차'}: {g.description}"
+                for g in plan_list
+            )
+            msg = (
+                f"[전체 {len(plan_list)}단계 계획 | ⚡병렬 {parallel_count}개 · →순차 {serial_count}개]\n"
+                f"{plan_summary}"
+            )
+        else:
+            first_group = plan_list[0]
+            msg = f"[{first_group.group_id}] {first_group.description}"
+
+        return _resp(
+            conversation_id=convo_id,
+            status="PLAN_CONFIRMATION",
+            history=history,
+            message=msg,
+            execution_group=plan_list[0],
+        )
+
+    except Exception as e:
+        issue_tracker.capture_exception(
+            e, context=f"generate_execution_plan convo_id={convo_id}", source="agent"
+        )
+        history.append(f"계획 수립 오류: {e}")
+        history_manager.save_conversation(
+            convo_id, history, "계획 실패", plan=[], current_group_index=0, is_final=False
+        )
+        return _resp(
+            conversation_id=convo_id,
+            status="ERROR",
+            history=history,
+            message=f"계획 수립 중 오류 발생: {e}",
+        )
+
+
+async def _handle_replan(
+    request: AgentRequest,
+    convo_id: str,
+    history: list,
+    data: dict,
+    effective_system_prompts: list,
+    effective_allowed_skills,
+) -> AgentResponse:
+    """재계획 처리: 이전 히스토리 기반 다음 그룹 → PLAN_CONFIRMATION or FINAL_ANSWER."""
+    try:
+        first_query = _extract_first_query(history)
+
+        # P3-B: Reviewer 역할 프롬프트 주입 (재계획 단계)
+        reviewer_prompts = [agent_config_manager.get_prompt("role_reviewer")] + effective_system_prompts
+
+        # [B] 지식 로드 및 주입
+        try:
+            wisdom_entries = graph_manager.load_wisdom(convo_id)
+            if wisdom_entries:
+                reviewer_prompts.append(_format_wisdom(wisdom_entries))
+        except Exception:
+            pass
+
+        plan_list = await generate_execution_plan(
+            user_query=first_query,
+            requirements_content="",
+            history=history,
+            model_preference=request.model_preference,
+            system_prompts=reviewer_prompts,
+            allowed_skills=effective_allowed_skills,
+        )
+
+        # [D] 카테고리 → model_preference 자동 적용
+        if plan_list:
+            _apply_category_preference(plan_list)
+
+        # [E] 계획 검증 게이트
+        if plan_list:
+            plan_list = await _validate_and_replan(
+                plan_list, first_query, "", history,
+                request.model_preference, reviewer_prompts, effective_allowed_skills,
+            )
+
+        if not plan_list:
+            final_answer = await generate_final_answer(history, request.model_preference)
+            history.append(f"최종 답변: {final_answer}")
+            title_summary = await generate_title_for_conversation(history, request.model_preference)
+            history_manager.save_conversation(
+                convo_id, history, title_summary, [], 0, is_final=True
+            )
+
+            # 키워드 추출 (실패 무시)
+            try:
+                keywords = await extract_keywords(history, request.model_preference)
+                if keywords:
+                    graph_manager.assign_keywords_to_conversation(convo_id, keywords)
+            except Exception as e:
+                logging.warning(f"키워드 추출 실패: {e}")
+
+            # 주제 분리 감지 (실패 무시)
+            topic_split_info = None
+            try:
+                topic_split_info = await detect_topic_split(history, request.model_preference)
+            except Exception as e:
+                logging.warning(f"주제 분리 감지 실패: {e}")
+
+            return _resp(
+                conversation_id=convo_id,
+                status="FINAL_ANSWER",
+                history=history,
+                message=final_answer,
+                topic_split_info=topic_split_info,
+            )
+
+        history = _prune_history(history)
+        plan_dicts = [group.model_dump() for group in plan_list]
+        history_manager.save_conversation(
+            convo_id, history, data.get("title", "진행 중"), plan_dicts, 0, is_final=False
+        )
+
+        next_group = plan_list[0]
+        return _resp(
+            conversation_id=convo_id,
+            status="PLAN_CONFIRMATION",
+            history=history,
+            message=f"[{next_group.group_id}] {next_group.description}",
+            execution_group=next_group
+        )
+
+    except Exception as e:
+        issue_tracker.capture_exception(
+            e, context=f"re-plan convo_id={convo_id}", source="agent"
+        )
+        history.append(f"다음 단계 계획 중 오류: {e}")
+        history_manager.save_conversation(
+            convo_id, history, "계획 오류", plan=[], current_group_index=0, is_final=False
+        )
+        return _resp(
+            conversation_id=convo_id,
+            status="ERROR",
+            history=history,
+            message=f"다음 단계 계획 중 오류 발생: {e}",
+        )
+
+
 @app.post("/agent/decide_and_act", response_model=AgentResponse)
 async def decide_and_act(request: AgentRequest):
     """
-    (수정) ReAct 루프의 핵심.
+    ReAct 루프의 핵심.
     1. 사용자 입력(신규/수정)이 있으면: '첫 번째' 계획 그룹을 생성합니다.
     2. 사용자 입력이 없으면(STEP_EXECUTED 후): History를 기반으로 '다음' 계획 그룹을 생성합니다.
     3. Planner가 '[]'를 반환하면: 'FINAL_ANSWER'를 생성합니다.
@@ -172,282 +599,21 @@ async def decide_and_act(request: AgentRequest):
     convo_id = data.get("id", request.conversation_id) if data else request.conversation_id
 
     # 페르소나 해석
-    effective_system_prompts = request.system_prompts or []
-    effective_allowed_skills = request.allowed_skills  # None = 필터 없음
-
-    if not effective_system_prompts:
-        persona = agent_config_manager.get_effective_persona(
-            query=request.user_input or "",
-            explicit_name=request.persona,
-        )
-        if persona:
-            effective_system_prompts = [persona["system_prompt"]]
-            if effective_allowed_skills is None and persona.get("allowed_skills"):
-                effective_allowed_skills = persona["allowed_skills"]
+    effective_system_prompts, effective_allowed_skills = _resolve_persona(
+        request.system_prompts or [],
+        request.allowed_skills,
+        request.user_input or "",
+        request.persona,
+    )
 
     if request.user_input or not history:
-        query = request.user_input or "무엇을 할까요?"
-
-        if request.user_input:
-            history.append(f"사용자 요청: {query}")
-
-        # P3-C: IntentGate — chat/task 분류 후 chat이면 즉시 최종 답변 반환
-        try:
-            intent = await classify_intent(query, request.model_preference)
-            if intent == "chat":
-                direct_answer = await generate_final_answer(history, request.model_preference)
-                history.append(f"최종 답변: {direct_answer}")
-                title_summary = await generate_title_for_conversation(history, request.model_preference)
-                history_manager.save_conversation(
-                    convo_id, history, title_summary, [], 0, is_final=True
-                )
-                return _resp(
-                    conversation_id=convo_id,
-                    status="FINAL_ANSWER",
-                    history=history,
-                    message=direct_answer,
-                )
-        except Exception as intent_err:
-            logging.warning(f"IntentGate 실패, task로 진행: {intent_err}")
-
-        # [D] 복잡도 분류
-        task_cat = await classify_task_category(query)
-
-        # [C] 3-tier 자동 라우팅: ultrabrain이면 pipeline_endpoint로
-        if task_cat == "ultrabrain" and not request.force_react:
-            logging.info(f"[3-tier] 복잡 쿼리 감지 → pipeline_endpoint 라우팅")
-            return await pipeline_endpoint(request)
-
-        # P3-B: Planner 역할 프롬프트 주입
-        planner_prompts = [agent_config_manager.get_prompt("role_planner")] + effective_system_prompts
-
-        # [B] 지식 로드 및 주입
-        try:
-            wisdom_entries = graph_manager.load_wisdom(convo_id)
-            if wisdom_entries:
-                planner_prompts.append(_format_wisdom(wisdom_entries))
-        except Exception:
-            pass
-
-        requirements_content = ""
-        if request.requirement_paths:
-            history.append(f"요구사항 파일 참조: {', '.join(request.requirement_paths)}")
-            for path in request.requirement_paths:
-                try:
-                    real_path = _validate_requirement_path(path)
-                    with open(real_path, 'r', encoding='utf-8') as f:
-                        requirements_content += f"--- {os.path.basename(real_path)} ---\n"
-                        requirements_content += f.read()
-                        requirements_content += "\n-----------------------------------\n\n"
-                except Exception as e:
-                    history.append(f"경고: 요구사항 파일 '{path}' 읽기 실패: {e}")
-
-        try:
-            plan_list = await generate_execution_plan(
-                user_query=query,
-                requirements_content=requirements_content,
-                history=history,
-                model_preference=request.model_preference,
-                system_prompts=planner_prompts,
-                allowed_skills=effective_allowed_skills,
-            )
-
-            if not plan_list:
-                 return _resp(
-                    conversation_id=convo_id,
-                    status="FINAL_ANSWER",
-                    history=history,
-                    message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
-                )
-
-            # [D] 카테고리 → model_preference 자동 적용
-            for group in plan_list:
-                if group.category:
-                    mp = _get_model_for_category(group.category)
-                    for task in group.tasks:
-                        if task.model_preference == "auto":
-                            task.model_preference = mp
-
-            # [E] 계획 검증 게이트
-            try:
-                available = list(tool_registry.get_all_tool_descriptions().keys())
-                validation = await validate_execution_plan(plan_list, available)
-                if not validation.valid:
-                    logging.warning(f"[E-PlanGate] score={validation.score:.2f}: {validation.issues}")
-                    history.append(
-                        f"[계획 검증 실패 score={validation.score:.2f}]: {'; '.join(validation.issues)}"
-                        f" → 개선 필요: {'; '.join(validation.suggestions)}"
-                    )
-                    # 한 번 재계획 시도
-                    plan_list = await generate_execution_plan(
-                        user_query=query,
-                        requirements_content=requirements_content,
-                        history=history,
-                        model_preference=request.model_preference,
-                        system_prompts=planner_prompts,
-                        allowed_skills=effective_allowed_skills,
-                    )
-            except Exception as val_e:
-                logging.debug(f"[E-PlanGate] 검증 생략: {val_e}")
-
-            if not plan_list:
-                return _resp(
-                    conversation_id=convo_id,
-                    status="FINAL_ANSWER",
-                    history=history,
-                    message="요청하신 작업에 대해 실행할 단계가 없습니다. (작업 완료)"
-                )
-
-            history = _prune_history(history)
-            plan_dicts = [group.model_dump() for group in plan_list]
-            history_manager.save_conversation(
-                convo_id, history, f"계획: {plan_list[0].description[:20]}...", plan_dicts, 0, is_final=False
-            )
-
-            first_group = plan_list[0]
-            return _resp(
-                conversation_id=convo_id,
-                status="PLAN_CONFIRMATION",
-                history=history,
-                message=f"[{first_group.group_id}] {first_group.description}",
-                execution_group=first_group
-            )
-
-        except Exception as e:
-            issue_tracker.capture_exception(
-                e, context=f"generate_execution_plan convo_id={convo_id}", source="agent"
-            )
-            history.append(f"계획 수립 오류: {e}")
-            # (수정 2) 누락된 인자 plan=[], current_group_index=0 추가
-            history_manager.save_conversation(
-                convo_id, history, "계획 실패", plan=[], current_group_index=0, is_final=False
-            )
-            return _resp(
-                conversation_id=convo_id,
-                status="ERROR",
-                history=history,
-                message=f"계획 수립 중 오류 발생: {e}",
-            )
-
+        return await _handle_new_query(
+            request, convo_id, history, effective_system_prompts, effective_allowed_skills
+        )
     else:
-        try:
-            first_query = _extract_first_query(history)
-
-            # P3-B: Reviewer 역할 프롬프트 주입 (재계획 단계)
-            reviewer_prompts = [agent_config_manager.get_prompt("role_reviewer")] + effective_system_prompts
-
-            # [B] 지식 로드 및 주입
-            try:
-                wisdom_entries = graph_manager.load_wisdom(convo_id)
-                if wisdom_entries:
-                    reviewer_prompts.append(_format_wisdom(wisdom_entries))
-            except Exception:
-                pass
-
-            plan_list = await generate_execution_plan(
-                user_query=first_query,
-                requirements_content="",
-                history=history,
-                model_preference=request.model_preference,
-                system_prompts=reviewer_prompts,
-                allowed_skills=effective_allowed_skills,
-            )
-
-            # [D] 카테고리 → model_preference 자동 적용
-            if plan_list:
-                for group in plan_list:
-                    if group.category:
-                        mp = _get_model_for_category(group.category)
-                        for task in group.tasks:
-                            if task.model_preference == "auto":
-                                task.model_preference = mp
-
-            # [E] 계획 검증 게이트
-            if plan_list:
-                try:
-                    available = list(tool_registry.get_all_tool_descriptions().keys())
-                    validation = await validate_execution_plan(plan_list, available)
-                    if not validation.valid:
-                        logging.warning(f"[E-PlanGate] score={validation.score:.2f}: {validation.issues}")
-                        history.append(
-                            f"[계획 검증 실패 score={validation.score:.2f}]: {'; '.join(validation.issues)}"
-                            f" → 개선 필요: {'; '.join(validation.suggestions)}"
-                        )
-                        plan_list = await generate_execution_plan(
-                            user_query=first_query,
-                            requirements_content="",
-                            history=history,
-                            model_preference=request.model_preference,
-                            system_prompts=reviewer_prompts,
-                            allowed_skills=effective_allowed_skills,
-                        )
-                except Exception as val_e:
-                    logging.debug(f"[E-PlanGate] 검증 생략: {val_e}")
-
-            if not plan_list:
-                final_answer = await generate_final_answer(history, request.model_preference)
-                history.append(f"최종 답변: {final_answer}")
-
-                title_summary = await generate_title_for_conversation(history, request.model_preference)
-
-                history_manager.save_conversation(
-                    convo_id, history, title_summary, [], 0,
-                    is_final=True
-                )
-
-                # 키워드 추출 (실패 무시)
-                try:
-                    keywords = await extract_keywords(history, request.model_preference)
-                    if keywords:
-                        graph_manager.assign_keywords_to_conversation(convo_id, keywords)
-                except Exception as e:
-                    logging.warning(f"키워드 추출 실패: {e}")
-
-                # 주제 분리 감지 (실패 무시)
-                topic_split_info = None
-                try:
-                    topic_split_info = await detect_topic_split(history, request.model_preference)
-                except Exception as e:
-                    logging.warning(f"주제 분리 감지 실패: {e}")
-
-                return _resp(
-                    conversation_id=convo_id,
-                    status="FINAL_ANSWER",
-                    history=history,
-                    message=final_answer,
-                    topic_split_info=topic_split_info,
-                )
-            
-            history = _prune_history(history)
-            plan_dicts = [group.model_dump() for group in plan_list]
-            history_manager.save_conversation(
-                convo_id, history, data.get("title", "진행 중"), plan_dicts, 0, is_final=False
-            )
-            
-            next_group = plan_list[0]
-            return _resp(
-                conversation_id=convo_id,
-                status="PLAN_CONFIRMATION",
-                history=history,
-                message=f"[{next_group.group_id}] {next_group.description}",
-                execution_group=next_group
-            )
-        
-        except Exception as e:
-             issue_tracker.capture_exception(
-                 e, context=f"re-plan convo_id={convo_id}", source="agent"
-             )
-             history.append(f"다음 단계 계획 중 오류: {e}")
-             # (수정 2) 누락된 인자 plan=[], current_group_index=0 추가
-             history_manager.save_conversation(
-                 convo_id, history, "계획 오류", plan=[], current_group_index=0, is_final=False
-             )
-             return _resp(
-                 conversation_id=convo_id,
-                 status="ERROR",
-                 history=history,
-                 message=f"다음 단계 계획 중 오류 발생: {e}",
-             )
+        return await _handle_replan(
+            request, convo_id, history, data or {}, effective_system_prompts, effective_allowed_skills
+        )
 
 
 @app.post("/agent/execute_group", response_model=AgentResponse)
@@ -460,7 +626,11 @@ async def execute_group(request: AgentRequest):
 
     data = history_manager.load_conversation(request.conversation_id)
     if not data:
-        raise HTTPException(status_code=404, detail="대화 ID를 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"대화 ID '{request.conversation_id}'를 찾을 수 없습니다. "
+                   "새 대화를 시작하려면 /agent/decide_and_act에 user_input을 전달하세요.",
+        )
 
     history = data.get("history", [])
     plan_dicts = data.get("plan", [])
@@ -470,56 +640,6 @@ async def execute_group(request: AgentRequest):
         raise HTTPException(status_code=400, detail="실행할 계획이 없습니다.")
 
     plan_list = [ExecutionGroup(**group) for group in plan_dicts]
-
-    async def _execute_single_task(task, session_id) -> tuple:
-        """단일 태스크를 실행하고 (tool_name, result_str, exc | None) 튜플을 반환."""
-        # P3-D: on-demand MCP 서버 지연 연결
-        await tool_registry.ensure_tool_server_connected(task.tool_name)
-
-        tool_function = tool_registry.get_tool(task.tool_name)
-        if not tool_function:
-            raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
-
-        providers = tool_registry.get_tool_providers(task.tool_name)
-        if len(providers) >= 2:
-            server_names = [p["server"] for p in providers]
-            logging.info(f"Tool '{task.tool_name}' has multiple providers: {server_names}")
-
-        _validate_tool_arguments(tool_function, task.tool_name, task.arguments)
-
-        t_start = time.monotonic()
-        try:
-            if inspect.iscoroutinefunction(tool_function):
-                result = await tool_function(**task.arguments)
-            else:
-                result = tool_function(**task.arguments)
-            duration_ms = int((time.monotonic() - t_start) * 1000)
-            try:
-                mcp_db_manager.log_usage(
-                    task.tool_name, success=True, session_id=session_id,
-                    duration_ms=duration_ms, args_summary=",".join(task.arguments.keys()),
-                )
-            except Exception as log_err:
-                logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
-            result_str = str(result)
-            if len(result_str) > MAX_TOOL_RESULT_LENGTH:
-                logging.warning(
-                    f"도구 '{task.tool_name}' 결과가 {MAX_TOOL_RESULT_LENGTH}자를 초과하여 잘렸습니다. "
-                    f"(원래 길이: {len(result_str)}자)"
-                )
-                result_str = result_str[:MAX_TOOL_RESULT_LENGTH] + "... (결과가 너무 길어 잘림)"
-            return task.tool_name, result_str, None
-        except Exception as tool_err:
-            duration_ms = int((time.monotonic() - t_start) * 1000)
-            try:
-                mcp_db_manager.log_usage(
-                    task.tool_name, success=False, session_id=session_id,
-                    duration_ms=duration_ms, error_message=str(tool_err),
-                    args_summary=",".join(task.arguments.keys()),
-                )
-            except Exception as log_err:
-                logging.warning(f"mcp_db_manager.log_usage 실패: {log_err}")
-            return task.tool_name, "", tool_err
 
     async def _run_single_group(grp: ExecutionGroup) -> tuple:
         """단일 그룹의 모든 태스크를 실행합니다. (success: bool, exc: Exception|None) 반환."""
@@ -542,12 +662,18 @@ async def execute_group(request: AgentRequest):
                 return_exceptions=True,
             )
             first_exc = None
-            for tool_name, result_str, exc in results:
-                if exc is not None:
-                    first_exc = exc
-                    history.append(f"  - 실행 오류 ({tool_name}): {exc}")
+            for r in results:
+                if isinstance(r, Exception):
+                    # return_exceptions=True 시 Exception 객체 직접 반환 (#52/#53)
+                    first_exc = r
+                    history.append(f"  - 실행 오류 (unknown): {r}")
                 else:
-                    history.append(f"  - 실행 결과 ({tool_name}): {result_str}")
+                    tool_name, result_str, exc = r
+                    if exc is not None:
+                        first_exc = exc
+                        history.append(f"  - 실행 오류 ({tool_name}): {exc}")
+                    else:
+                        history.append(f"  - 실행 결과 ({tool_name}): {result_str}")
 
             if first_exc is not None:
                 try:
@@ -623,7 +749,7 @@ async def execute_group(request: AgentRequest):
 
     # [B] 실행 결과에서 지식 추출 (백그라운드식, 실패 무시)
     try:
-        result_lines = [h for h in history[-20:] if "실행 결과" in h]
+        result_lines = [h for h in history[-RESULT_HISTORY_ITEMS:] if "실행 결과" in h]
         ctx = history[0] if history else ""
         wisdom = await extract_wisdom(result_lines, ctx)
         if wisdom:
@@ -658,21 +784,14 @@ async def pipeline_endpoint(request: AgentRequest):
     history = data.get("history", []) if data else list(request.history)
     convo_id = data.get("id", request.conversation_id) if data else request.conversation_id
 
-    # 페르소나 해석 (기존 방식과 동일)
-    persona_prompt = ""
-    effective_allowed_skills = request.allowed_skills
-
-    if not request.system_prompts:
-        persona = agent_config_manager.get_effective_persona(
-            query=request.user_input or "",
-            explicit_name=request.persona,
-        )
-        if persona:
-            persona_prompt = persona.get("system_prompt", "")
-            if effective_allowed_skills is None and persona.get("allowed_skills"):
-                effective_allowed_skills = persona["allowed_skills"]
-    else:
-        persona_prompt = "\n".join(request.system_prompts)
+    # 페르소나 해석
+    _prompts, effective_allowed_skills = _resolve_persona(
+        list(request.system_prompts) if request.system_prompts else [],
+        request.allowed_skills,
+        request.user_input or "",
+        request.persona,
+    )
+    persona_prompt = "\n".join(_prompts) if _prompts else ""
 
     try:
         cursor = pipeline_db.get_cursor(convo_id)
@@ -805,34 +924,26 @@ async def pipeline_execute(request: AgentRequest):
     history.append(f"그룹 실행 시작: [{group_to_execute.group_id}] {group_to_execute.description}")
 
     session_id = None
-    overall_success = True
     try:
         session_id = mcp_db_manager.start_session(convo_id, group_to_execute.group_id)
     except Exception as e:
         logging.warning(f"start_session 실패: {e}")
 
-    # 기존 execute_group과 동일한 실행 로직 (tool_registry 호출)
+    raw_results = await asyncio.gather(
+        *[_execute_single_task(task, session_id) for task in group_to_execute.tasks],
+        return_exceptions=True,
+    )
     results = []
-    for task in group_to_execute.tasks:
-        try:
-            await tool_registry.ensure_tool_server_connected(task.tool_name)
-            tool_fn = tool_registry.get_tool(task.tool_name)
-            if not tool_fn:
-                raise ValueError(f"'{task.tool_name}' 도구를 찾을 수 없습니다.")
-            _validate_tool_arguments(tool_fn, task.tool_name, task.arguments)
-            t0 = time.monotonic()
-            if inspect.iscoroutinefunction(tool_fn):
-                result = await tool_fn(**task.arguments)
-            else:
-                result = tool_fn(**task.arguments)
-            dur = int((time.monotonic() - t0) * 1000)
-            result_str = str(result)[:MAX_TOOL_RESULT_LENGTH]
-            mcp_db_manager.log_usage(task.tool_name, success=True, session_id=session_id,
-                                     duration_ms=dur)
-            results.append((task.tool_name, result_str, None))
-        except Exception as exc:
-            results.append((task.tool_name, "", exc))
+    overall_success = True
+    for r in raw_results:
+        if isinstance(r, Exception):
+            results.append(("unknown", "", r))
             overall_success = False
+        else:
+            tool_name, result_str, exc = r
+            results.append((tool_name, result_str, exc))
+            if exc is not None:
+                overall_success = False
 
     has_error = False
     for tool_name, result_str, exc in results:

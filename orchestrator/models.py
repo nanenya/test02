@@ -34,6 +34,7 @@ class AgentRequest(BaseModel):
         description="서버가 반환한 pipeline_state를 그대로 다시 전송 (커서 복원용)"
     )
     force_react: bool = Field(default=False, description="3-tier 자동 라우팅 우회, 항상 ReAct 모드 사용")
+    parallel_mode: bool = Field(default=False, description="병렬 플래닝 모드: 독립 태스크를 한 번에 계획해 동시 실행")
 
 class ToolCall(BaseModel):
     """단일 도구 호출(MCP)을 정의하는 모델"""

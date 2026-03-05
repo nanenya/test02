@@ -35,14 +35,17 @@ class TestDecideAndAct:
         with patch("orchestrator.api.tool_registry") as mock_tr, \
              patch("orchestrator.api.history_manager") as mock_hm, \
              patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan, \
-             patch("orchestrator.api.classify_intent", new_callable=AsyncMock) as mock_intent:
+             patch("orchestrator.api.generate_parallel_plan", new_callable=AsyncMock) as mock_par_plan, \
+             patch("orchestrator.api.classify_intent_and_category", new_callable=AsyncMock) as mock_intent, \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
             mock_hm.load_conversation.return_value = None
             mock_plan.return_value = [sample_group]
+            mock_par_plan.return_value = [sample_group]
             mock_hm.save_conversation = MagicMock()
-            mock_intent.return_value = "task"
+            mock_intent.return_value = ("code_write", "deep")
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -61,13 +64,21 @@ class TestDecideAndAct:
         with patch("orchestrator.api.tool_registry") as mock_tr, \
              patch("orchestrator.api.history_manager") as mock_hm, \
              patch("orchestrator.api.generate_execution_plan", new_callable=AsyncMock) as mock_plan, \
-             patch("orchestrator.api.classify_intent", new_callable=AsyncMock) as mock_intent:
+             patch("orchestrator.api.generate_parallel_plan", new_callable=AsyncMock) as mock_par_plan, \
+             patch("orchestrator.api.classify_intent_and_category", new_callable=AsyncMock) as mock_intent, \
+             patch("orchestrator.api.generate_final_answer", new_callable=AsyncMock) as mock_final, \
+             patch("orchestrator.api.generate_title_for_conversation", new_callable=AsyncMock) as mock_title, \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
             mock_hm.load_conversation.return_value = None
             mock_plan.return_value = []
-            mock_intent.return_value = "task"
+            mock_par_plan.return_value = []
+            mock_intent.return_value = ("code_write", "deep")
+            mock_final.return_value = "작업이 완료되었습니다."
+            mock_title.return_value = "완료된 작업"
+            mock_hm.save_conversation = MagicMock()
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -85,7 +96,9 @@ class TestExecuteGroup:
     async def test_no_conversation_returns_404(self):
         """존재하지 않는 대화 ID는 404"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
-             patch("orchestrator.api.history_manager") as mock_hm:
+             patch("orchestrator.api.history_manager") as mock_hm, \
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
@@ -103,7 +116,9 @@ class TestExecuteGroup:
     async def test_successful_execution_returns_step_executed(self, sample_group):
         """정상 실행 시 STEP_EXECUTED 반환"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
-             patch("orchestrator.api.history_manager") as mock_hm:
+             patch("orchestrator.api.history_manager") as mock_hm, \
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
@@ -115,6 +130,7 @@ class TestExecuteGroup:
                 "title": "test"
             }
             mock_tr.get_tool.return_value = lambda **kwargs: "ok"
+            mock_tr.get_tool_providers.return_value = []
             mock_hm.save_conversation = MagicMock()
 
             transport = ASGITransport(app=app)
@@ -130,7 +146,9 @@ class TestExecuteGroup:
     async def test_missing_tool_returns_error(self, sample_group):
         """도구를 찾을 수 없을 때 ERROR 반환"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
-             patch("orchestrator.api.history_manager") as mock_hm:
+             patch("orchestrator.api.history_manager") as mock_hm, \
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
@@ -157,7 +175,9 @@ class TestExecuteGroup:
     async def test_empty_plan_returns_400(self):
         """실행할 계획이 없으면 400"""
         with patch("orchestrator.api.tool_registry") as mock_tr, \
-             patch("orchestrator.api.history_manager") as mock_hm:
+             patch("orchestrator.api.history_manager") as mock_hm, \
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
@@ -240,7 +260,8 @@ class TestValidateToolArguments:
             pass
         _validate_tool_arguments(my_tool, "my_tool", {"a": "x", "b": 1, "c": 2.0})
 
-    def test_invalid_args_blocked_in_execute_group(self, sample_group):
+    @pytest.mark.asyncio
+    async def test_invalid_args_blocked_in_execute_group(self, sample_group):
         """execute_group에서 허용되지 않은 인자 사용 시 ERROR 반환"""
         injected_group = ExecutionGroup(
             group_id="group_1",
@@ -255,10 +276,13 @@ class TestValidateToolArguments:
             return text
 
         with patch("orchestrator.api.tool_registry") as mock_tr, \
-             patch("orchestrator.api.history_manager") as mock_hm:
+             patch("orchestrator.api.history_manager") as mock_hm, \
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
+            mock_tr.ensure_tool_server_connected = AsyncMock()
             mock_hm.load_conversation.return_value = {
                 "id": "test-id",
                 "history": [],
@@ -269,18 +293,12 @@ class TestValidateToolArguments:
             mock_tr.get_tool_providers.return_value = []
             mock_hm.save_conversation = MagicMock()
 
-            import asyncio
-            from httpx import AsyncClient, ASGITransport
-
-            async def run():
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
-                    return await ac.post("/agent/execute_group", json={
-                        "conversation_id": "test-id",
-                        "history": []
-                    })
-
-            resp = asyncio.get_event_loop().run_until_complete(run())
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                resp = await ac.post("/agent/execute_group", json={
+                    "conversation_id": "test-id",
+                    "history": []
+                })
             assert resp.status_code == 200
             assert resp.json()["status"] == "ERROR"
 
@@ -355,7 +373,8 @@ class TestResultTruncationWarning:
 
         with patch("orchestrator.api.tool_registry") as mock_tr, \
              patch("orchestrator.api.history_manager") as mock_hm, \
-             patch("orchestrator.api.mcp_db_manager"):
+             patch("orchestrator.api.mcp_db_manager"), \
+             patch("orchestrator.api.issue_tracker"):
 
             mock_tr.initialize = AsyncMock()
             mock_tr.shutdown = AsyncMock()
