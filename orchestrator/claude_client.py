@@ -7,12 +7,13 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
-from .tool_registry import get_filtered_tool_descriptions
 from .models import ExecutionGroup
-from .constants import HISTORY_MAX_CHARS, truncate_history as _truncate_history
+from .constants import HISTORY_MAX_CHARS
 from . import agent_config_manager as _acm
 from ._llm_utils import (
     _extract_json_block,
+    generate_execution_plan_with_caller,
+    generate_final_answer_with_caller,
     extract_keywords_with_caller,
     detect_topic_split_with_caller,
     generate_title_with_caller,
@@ -86,7 +87,6 @@ async def _call_claude(
         resp.raise_for_status()
         data = resp.json()
 
-    # 토큰 사용량 기록
     try:
         from . import token_tracker
         _usage = data.get("usage", {})
@@ -125,64 +125,29 @@ async def generate_execution_plan(
     system_prompts: List[str] = None,
     allowed_skills: Optional[List[str]] = None,
 ) -> List[ExecutionGroup]:
-    """
-    ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
+    """ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
     목표가 완료되면 빈 리스트 []를 반환합니다.
     """
     model_name = _get_model_name(model_preference, default_type="high")
-    tool_descriptions = get_filtered_tool_descriptions(allowed_skills)
-    formatted_history = _truncate_history(history)
-    custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
-    system = custom_system_prompt + "\n\n" + _acm.get_prompt("react_planner_system")
-
-    user = _acm.render_prompt(
-        "react_planner_instruction",
-        user_query=user_query,
-        requirements_content=requirements_content if requirements_content else "없음",
-        tool_descriptions=tool_descriptions,
-        formatted_history=formatted_history,
+    return await generate_execution_plan_with_caller(
+        _call_claude, user_query, requirements_content, history,
+        model_name, system_prompts, allowed_skills,
     )
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
-        text = _extract_json_block(text)
-        parsed_json = json.loads(text)
-
-        if not isinstance(parsed_json, list):
-            raise ValueError("응답이 리스트 형식이 아닙니다.")
-
-        if not parsed_json:
-            return []
-
-        plan = [ExecutionGroup(**group) for group in parsed_json]
-        return plan[:1]
-
-    except (json.JSONDecodeError, TypeError, ValueError) as e:
-        print(f"JSON 파싱 오류: {e}\n받은 응답: {text}")
-        raise ValueError(f"Planner 모델이 유효한 JSON 계획을 생성하지 못했습니다: {e}")
-    except Exception as e:
-        print(f"Planner 모델 호출 오류: {e}")
-        raise e
 
 
 async def generate_final_answer(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
     model_name = _get_model_name(model_preference, default_type="standard")
-    system = _acm.get_prompt("final_answer_system")
-    history_str = _truncate_history(history)
-    user = _acm.render_prompt("final_answer_user", history_str=history_str)
-
-    text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)
-    return text.strip()
+    return await generate_final_answer_with_caller(_call_claude, history, model_name)
 
 
 async def extract_keywords(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> List[str]:
-    """Claude로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함)."""
+    """Claude로 키워드 5~10개 추출. 실패 시 [] 반환."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return []
     return await extract_keywords_with_caller(
@@ -194,9 +159,7 @@ async def detect_topic_split(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> Optional[Dict[str, Any]]:
-    """Claude로 주제 전환 지점 감지. 실패 시 None 반환.
-    반환: {"detected": bool, "split_index": int, "reason": str,
-           "topic_a": str, "topic_b": str}"""
+    """Claude로 주제 전환 지점 감지. 실패 시 None 반환."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return None
     return await detect_topic_split_with_caller(
@@ -206,7 +169,7 @@ async def detect_topic_split(
 
 async def generate_title_for_conversation(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
     if not os.getenv("ANTHROPIC_API_KEY"):
         return "Untitled_Conversation"

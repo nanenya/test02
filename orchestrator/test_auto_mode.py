@@ -109,7 +109,7 @@ class TestMaybeAutoSummarize:
         from orchestrator.constants import HISTORY_AUTO_SUMMARIZE_THRESHOLD
 
         short_history = ["항목"] * (HISTORY_AUTO_SUMMARIZE_THRESHOLD - 1)
-        with patch("orchestrator.api.summarize_history", new_callable=AsyncMock) as mock_sum:
+        with patch("orchestrator._api_helpers.summarize_history", new_callable=AsyncMock) as mock_sum:
             result = await _maybe_auto_summarize(short_history)
         mock_sum.assert_not_called()
         assert result == short_history
@@ -120,7 +120,7 @@ class TestMaybeAutoSummarize:
         from orchestrator.constants import HISTORY_AUTO_SUMMARIZE_THRESHOLD, HISTORY_KEEP_RECENT
 
         long_history = [f"항목_{i}" for i in range(HISTORY_AUTO_SUMMARIZE_THRESHOLD + 5)]
-        with patch("orchestrator.api.summarize_history", new_callable=AsyncMock) as mock_sum:
+        with patch("orchestrator._api_helpers.summarize_history", new_callable=AsyncMock) as mock_sum:
             mock_sum.return_value = "요약된 내용"
             result = await _maybe_auto_summarize(long_history)
 
@@ -140,7 +140,7 @@ class TestMaybeAutoSummarize:
 
         long_history = [f"항목_{i}" for i in range(HISTORY_AUTO_SUMMARIZE_THRESHOLD + 5)]
         long_history.append(f"{HISTORY_SUMMARY_MARKER}\n이미 요약됨")
-        with patch("orchestrator.api.summarize_history", new_callable=AsyncMock) as mock_sum:
+        with patch("orchestrator._api_helpers.summarize_history", new_callable=AsyncMock) as mock_sum:
             result = await _maybe_auto_summarize(long_history)
         mock_sum.assert_not_called()
         assert result == long_history
@@ -152,7 +152,7 @@ class TestMaybeAutoSummarize:
         from orchestrator.constants import HISTORY_AUTO_SUMMARIZE_THRESHOLD
 
         long_history = [f"항목_{i}" for i in range(HISTORY_AUTO_SUMMARIZE_THRESHOLD + 5)]
-        with patch("orchestrator.api.summarize_history", new_callable=AsyncMock) as mock_sum:
+        with patch("orchestrator._api_helpers.summarize_history", new_callable=AsyncMock) as mock_sum:
             mock_sum.return_value = ""  # 빈 요약 = 실패
             result = await _maybe_auto_summarize(long_history)
         assert result == long_history

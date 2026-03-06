@@ -91,7 +91,7 @@ class TestCallOpenAI:
 
         with patch("os.getenv", return_value="test-key"):
             with patch("httpx.AsyncClient", return_value=mock_client):
-                await oc._call_openai("prompt", "system", "gpt-4o", json_format=True)
+                await oc._call_openai("system", "prompt", "gpt-4o", json_mode=True)
 
         assert captured_payload.get("response_format") == {"type": "json_object"}
 

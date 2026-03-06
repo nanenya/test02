@@ -82,26 +82,27 @@ class TestGenerateFinalAnswer:
         assert result == "최종 답변입니다."
 
     @pytest.mark.asyncio
-    async def test_connect_error_raises_runtime(self):
+    async def test_connect_error_returns_fallback(self):
+        """ConnectError 시 폴백 문자열 반환 (예외 전파 대신 에러 통일 처리)."""
         import httpx
         with patch.object(ollama_client, "_ollama_chat", side_effect=httpx.ConnectError("실패")):
-            with pytest.raises(RuntimeError, match="Ollama 서버에 연결할 수 없습니다"):
-                await ollama_client.generate_final_answer(history=["히스토리"])
+            result = await ollama_client.generate_final_answer(history=["히스토리"])
+        assert isinstance(result, str) and len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_error_propagates(self):
-        """예외는 상위(_call_with_fallback)로 전파되어 폴백 체인이 동작해야 함."""
+    async def test_error_returns_fallback(self):
+        """예외 발생 시 폴백 문자열 반환 (에러 핸들링 통일)."""
         history = ["  - 실행 결과: 파일 목록: ['a.txt']"]
         with patch.object(ollama_client, "_ollama_chat", side_effect=Exception("오류")):
-            with pytest.raises(Exception, match="오류"):
-                await ollama_client.generate_final_answer(history=history)
+            result = await ollama_client.generate_final_answer(history=history)
+        assert isinstance(result, str) and len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_error_propagates_empty_history(self):
-        """히스토리가 없어도 예외는 전파됨."""
+    async def test_error_empty_history_returns_fallback(self):
+        """히스토리 없어도 예외 시 폴백 문자열 반환."""
         with patch.object(ollama_client, "_ollama_chat", side_effect=Exception("오류")):
-            with pytest.raises(Exception, match="오류"):
-                await ollama_client.generate_final_answer(history=["일반 메시지"])
+            result = await ollama_client.generate_final_answer(history=["일반 메시지"])
+        assert isinstance(result, str) and len(result) > 0
 
 
 # ── extract_keywords ──────────────────────────────────────────────

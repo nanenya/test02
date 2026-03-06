@@ -561,8 +561,8 @@ class TestValidateCodeSyntax:
 class TestFuncNamesLimit:
     def test_func_names_does_not_exceed_limit(self, db, monkeypatch):
         """func_names 리스트가 MAX_FUNC_NAMES_PER_SESSION을 초과하지 않는다."""
-        import orchestrator.mcp_db_manager as mgr
-        monkeypatch.setattr(mgr, "MAX_FUNC_NAMES_PER_SESSION", 3)
+        import orchestrator._mcp_usage_tracker as tracker
+        monkeypatch.setattr(tracker, "MAX_FUNC_NAMES_PER_SESSION", 3)
 
         sid = start_session(db_path=db)
         for i in range(5):
@@ -579,8 +579,8 @@ class TestFuncNamesLimit:
 
     def test_func_names_warns_at_limit(self, db, monkeypatch, caplog):
         """한도 초과 시 WARNING 로그가 기록된다."""
-        import orchestrator.mcp_db_manager as mgr
-        monkeypatch.setattr(mgr, "MAX_FUNC_NAMES_PER_SESSION", 2)
+        import orchestrator._mcp_usage_tracker as tracker
+        monkeypatch.setattr(tracker, "MAX_FUNC_NAMES_PER_SESSION", 2)
 
         sid = start_session(db_path=db)
         import logging
