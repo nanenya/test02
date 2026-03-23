@@ -241,8 +241,8 @@ class TestFallbackChain:
         def mock_get_client(provider):
             return mock_module_fail if provider == "gemini" else mock_module_ok
 
-        with patch("orchestrator.llm_client._get_fallback_chain", return_value=["gemini", "claude"]), \
-             patch("orchestrator.llm_client._get_client_module", side_effect=mock_get_client):
+        with patch("orchestrator._circuit_breaker._get_fallback_chain", return_value=["gemini", "claude"]), \
+             patch("orchestrator._circuit_breaker._get_client_module", side_effect=mock_get_client):
             result = asyncio.get_event_loop().run_until_complete(
                 _call_with_fallback("test_fn", history=[])
             )
@@ -260,8 +260,8 @@ class TestFallbackChain:
         mock_module = MagicMock()
         mock_module.test_fn = mock_fn_fail
 
-        with patch("orchestrator.llm_client._get_fallback_chain", return_value=["gemini", "claude"]), \
-             patch("orchestrator.llm_client._get_client_module", return_value=mock_module):
+        with patch("orchestrator._circuit_breaker._get_fallback_chain", return_value=["gemini", "claude"]), \
+             patch("orchestrator._circuit_breaker._get_client_module", return_value=mock_module):
             with pytest.raises(RuntimeError, match="모두 실패"):
                 asyncio.get_event_loop().run_until_complete(
                     _call_with_fallback("test_fn", history=[])
@@ -287,8 +287,8 @@ class TestSummarizeHistory:
         mock_module = MagicMock()
         mock_module.generate_final_answer = mock_fail
 
-        with patch("orchestrator.llm_client._get_fallback_chain", return_value=["gemini"]), \
-             patch("orchestrator.llm_client._get_client_module", return_value=mock_module):
+        with patch("orchestrator._circuit_breaker._get_fallback_chain", return_value=["gemini"]), \
+             patch("orchestrator._circuit_breaker._get_client_module", return_value=mock_module):
             result = asyncio.get_event_loop().run_until_complete(
                 summarize_history(["항목1", "항목2"])
             )
@@ -308,8 +308,8 @@ class TestSummarizeHistory:
         mock_module.generate_final_answer = mock_answer
 
         long_history = ["A" * 2000] * 10  # 20KB 히스토리
-        with patch("orchestrator.llm_client._get_fallback_chain", return_value=["gemini"]), \
-             patch("orchestrator.llm_client._get_client_module", return_value=mock_module):
+        with patch("orchestrator._circuit_breaker._get_fallback_chain", return_value=["gemini"]), \
+             patch("orchestrator._circuit_breaker._get_client_module", return_value=mock_module):
             result = asyncio.get_event_loop().run_until_complete(
                 summarize_history(long_history)
             )

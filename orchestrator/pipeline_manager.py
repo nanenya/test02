@@ -42,6 +42,7 @@ from .llm_client import (
     generate_title_for_conversation,
     extract_keywords,
 )
+from .constants import RECENT_HISTORY_ITEMS
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +378,53 @@ async def advance_after_execution(
 
 # ── 내부 헬퍼: 실행 그룹 빌드 → PLAN_CONFIRMATION 반환 ────────────────────────
 
+async def _try_template_match(plan_step, task, design, history, model_preference):
+    """template_engine으로 매칭 시도. 실패 시 (None, None)."""
+    try:
+        group_dict, template_id = await template_engine.find_and_adapt(
+            plan_step=plan_step,
+            task={"title": task.get("title", ""), "description": task.get("description", "")},
+            design=design, history=history, model_preference=model_preference,
+        )
+        if group_dict:
+            history.append(f"[캐시] 실행 템플릿 적용 (id={template_id})")
+            return group_dict, template_id
+    except Exception as e:
+        logger.warning(f"[Pipeline] template_engine 실패: {e}")
+    return None, None
+
+
+async def _build_group_with_llm(plan_step, task, design, available_tools, history, model_preference):
+    """LLM으로 실행 그룹 빌드. 실패 시 빈 그룹 반환."""
+    try:
+        return await build_execution_group_for_step(
+            plan_step=plan_step,
+            task={"title": task.get("title", ""), "description": task.get("description", "")},
+            design=design, available_tools=available_tools,
+            history=history[-RECENT_HISTORY_ITEMS:], model_preference=model_preference,
+        )
+    except Exception as e:
+        logger.error(f"실행 그룹 빌드 실패: {e}")
+        return {"group_id": f"group_{plan_step['id']}", "description": plan_step.get("action", "실행"), "tasks": []}
+
+
+def _filter_available_tools(group_dict: dict, available_tools: list, plan_step: dict) -> list:
+    """이용 불가 도구를 필터링하고 tool_gap을 로깅합니다."""
+    available_set = set(available_tools)
+    filtered = []
+    for t in group_dict.get("tasks", []):
+        tool_name = t.get("tool_name", "")
+        if tool_name in available_set:
+            filtered.append(t)
+        else:
+            logger.warning(f"[Pipeline] 도구 없음: {tool_name}")
+            pipeline_db.log_tool_gap(
+                required_tool=tool_name, resolution_type="not_found",
+                note=f"plan_step_id={plan_step['id']}",
+            )
+    return filtered
+
+
 async def _build_and_return_step(
     conversation_id: str,
     design: Dict[str, Any],
@@ -390,59 +438,19 @@ async def _build_and_return_step(
 
     템플릿 엔진(향상된 스코어링 + 인자 적응) → LLM 순서로 시도합니다.
     """
-    group_dict = None
-    template_id = None
-
     # ① template_engine: 향상된 스코어링 + 인자 적응 (Phase 2 핵심)
-    try:
-        group_dict, template_id = await template_engine.find_and_adapt(
-            plan_step=plan_step,
-            task={"title": task.get("title", ""), "description": task.get("description", "")},
-            design=design,
-            history=history,
-            model_preference=model_preference,
-        )
-        if group_dict:
-            history.append(f"[캐시] 실행 템플릿 적용 (id={template_id})")
-    except Exception as e:
-        logger.warning(f"[Pipeline] template_engine 실패: {e}")
-        group_dict = None
-        template_id = None
+    group_dict, template_id = await _try_template_match(
+        plan_step, task, design, history, model_preference
+    )
 
+    # ② 템플릿 미스 시 LLM으로 실행 그룹 빌드
     if not group_dict:
-        # ② LLM으로 실행 그룹 빌드
-        try:
-            group_dict = await build_execution_group_for_step(
-                plan_step=plan_step,
-                task={"title": task.get("title", ""), "description": task.get("description", "")},
-                design=design,
-                available_tools=available_tools,
-                history=history[-6:],
-                model_preference=model_preference,
-            )
-        except Exception as e:
-            logger.error(f"실행 그룹 빌드 실패: {e}")
-            group_dict = {
-                "group_id": f"group_{plan_step['id']}",
-                "description": plan_step.get("action", "실행"),
-                "tasks": [],
-            }
+        group_dict = await _build_group_with_llm(
+            plan_step, task, design, available_tools, history, model_preference
+        )
 
     # 존재하지 않는 도구 필터링 + tool_gap_log 기록
-    available_set = set(available_tools)
-    filtered_tasks = []
-    for t in group_dict.get("tasks", []):
-        tool_name = t.get("tool_name", "")
-        if tool_name in available_set:
-            filtered_tasks.append(t)
-        else:
-            logger.warning(f"[Pipeline] 도구 없음: {tool_name}")
-            pipeline_db.log_tool_gap(
-                required_tool=tool_name,
-                resolution_type="not_found",
-                note=f"plan_step_id={plan_step['id']}",
-            )
-    group_dict["tasks"] = filtered_tasks
+    group_dict["tasks"] = _filter_available_tools(group_dict, available_tools, plan_step)
 
     # ExecutionGroup 객체 변환
     exec_group = _build_execution_group_obj(group_dict)

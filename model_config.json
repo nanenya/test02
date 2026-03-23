@@ -8,7 +8,9 @@
       "enabled": true,
       "api_key_env": "GEMINI_API_KEY",
       "fallback_env": "GOOGLE_API_KEY",
-      "default_model": "models/gemini-3.1-pro-preview"
+      "default_model": "models/gemini-3.1-pro-preview",
+      "high_model": "models/gemini-3.1-pro-preview",
+      "standard_model": "models/gemini-3.1-pro-preview"
     },
     "claude": {
       "enabled": true,

@@ -1,629 +1,1787 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agent Orchestrator</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Orchestrator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      /* Colors - Premium Slate & Emerald */
+      --bg-main: #0f172a;
+      --bg-panel: #1e293b;
+      --bg-input: #020617;
+      --border-color: #334155;
+      --accent-primary: #10b981;
+      /* Emerald */
+      --accent-primary-hover: #059669;
+      --accent-secondary: #3b82f6;
+      /* Blue */
+      --accent-danger: #ef4444;
+      /* Rose */
+      --accent-danger-hover: #dc2626;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
 
-/* 탭 헤더 */
-.tab-bar { display: flex; background: #16213e; border-bottom: 2px solid #0f3460; }
-.tab-btn { padding: 12px 24px; cursor: pointer; border: none; background: none; color: #888; font-size: 14px; font-weight: 500; transition: all 0.2s; }
-.tab-btn.active { color: #e94560; border-bottom: 2px solid #e94560; margin-bottom: -2px; }
-.tab-btn:hover:not(.active) { color: #ccc; background: rgba(255,255,255,0.05); }
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --radius-md: 8px;
+      --radius-sm: 4px;
 
-.tab-content { display: none; flex: 1; overflow: hidden; }
-.tab-content.active { display: flex; flex: 1; overflow: hidden; }
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
 
-/* 채팅 탭 */
-.chat-sidebar { width: 240px; background: #16213e; border-right: 1px solid #0f3460; display: flex; flex-direction: column; }
-.chat-sidebar-header { padding: 12px; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
-.chat-sidebar-header span { font-size: 13px; font-weight: 600; color: #ccc; }
-.btn-new { background: #e94560; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-.btn-new:hover { background: #c73652; }
-.convo-list { flex: 1; overflow-y: auto; }
-.convo-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.convo-item:hover { background: rgba(233,69,96,0.1); color: #e0e0e0; }
-.convo-item.active { background: rgba(233,69,96,0.2); color: #e94560; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-.chat-main { flex: 1; display: flex; flex-direction: column; }
-.chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 80%; padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.5; word-break: break-word; }
-.msg.user { align-self: flex-end; background: #0f3460; color: #e0e0e0; }
-.msg.assistant { align-self: flex-start; background: #1a2a4a; color: #e0e0e0; }
-.msg.error { background: rgba(233,69,96,0.2); color: #ff6b6b; border: 1px solid #e94560; }
-.msg.system { align-self: center; background: rgba(255,255,255,0.05); color: #888; font-size: 12px; font-style: italic; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-main);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
 
-.plan-card { align-self: flex-start; background: #0d2137; border: 1px solid #1e4a7a; border-radius: 8px; padding: 12px 16px; max-width: 85%; }
-.plan-card h4 { color: #5ba8f5; font-size: 13px; margin-bottom: 8px; }
-.plan-card p { font-size: 13px; color: #ccc; margin-bottom: 10px; }
-.plan-actions { display: flex; gap: 8px; }
-.btn-confirm { background: #28a745; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-.btn-confirm:hover { background: #218838; }
-.btn-cancel { background: #6c757d; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-.btn-cancel:hover { background: #5a6268; }
+    /* Tab Bar */
+    .tab-bar {
+      display: flex;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 8px;
+      gap: 4px;
+    }
 
-.chat-input-row { padding: 12px 16px; background: #16213e; border-top: 1px solid #0f3460; display: flex; gap: 8px; }
-.chat-input { flex: 1; background: #0f1e35; border: 1px solid #0f3460; color: #e0e0e0; padding: 10px 12px; border-radius: 6px; font-size: 14px; resize: none; min-height: 42px; max-height: 120px; }
-.chat-input:focus { outline: none; border-color: #e94560; }
-.btn-send { background: #e94560; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-.btn-send:hover { background: #c73652; }
-.btn-send:disabled { background: #555; cursor: not-allowed; }
+    .tab-btn {
+      padding: 14px 20px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      transition: var(--transition);
+      position: relative;
+    }
 
-/* 대화이력 탭 */
-.history-panel { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-.filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.filter-row input, .filter-row select { background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; padding: 7px 10px; border-radius: 4px; font-size: 13px; }
-.filter-row input:focus, .filter-row select:focus { outline: none; border-color: #e94560; }
-.btn-search { background: #0f3460; color: #e0e0e0; border: none; padding: 7px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-.btn-search:hover { background: #1a4a80; }
+    .tab-btn.active {
+      color: var(--accent-primary);
+    }
 
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background: #16213e; padding: 10px 12px; text-align: left; color: #888; font-weight: 500; border-bottom: 1px solid #0f3460; }
-td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
-tr:hover td { background: rgba(255,255,255,0.03); }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
-.badge.active { background: rgba(40,167,69,0.2); color: #28a745; }
-.badge.final { background: rgba(91,168,245,0.2); color: #5ba8f5; }
-.kw-tag { display: inline-block; background: rgba(233,69,96,0.15); color: #e94560; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin: 1px; }
-.btn-icon { background: none; border: none; cursor: pointer; font-size: 15px; padding: 3px 6px; border-radius: 4px; }
-.btn-icon:hover { background: rgba(255,255,255,0.1); }
-.btn-danger { color: #e94560; }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent-primary);
+      box-shadow: 0 0 8px var(--accent-primary);
+    }
 
-/* 함수 탭 */
-.functions-panel { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-.stats-bar { display: flex; gap: 16px; flex-wrap: wrap; }
-.stat-card { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px 16px; min-width: 140px; }
-.stat-card .stat-label { font-size: 11px; color: #888; margin-bottom: 4px; }
-.stat-card .stat-value { font-size: 22px; font-weight: 600; color: #5ba8f5; }
-.func-group-header { background: #16213e; padding: 8px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; color: #aaa; margin-top: 8px; cursor: pointer; display: flex; justify-content: space-between; }
-.func-row { background: #0d1b2e; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; margin: 4px 0; padding: 10px 14px; font-size: 13px; cursor: pointer; }
-.func-row:hover { border-color: #1e4a7a; }
-.func-name { color: #5ba8f5; font-weight: 500; }
-.func-desc { color: #888; font-size: 12px; margin-top: 2px; }
-pre.code-view { background: #050d1a; border: 1px solid #0f3460; border-radius: 6px; padding: 14px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; color: #a8c7f0; max-height: 300px; overflow-y: auto; }
+    .tab-btn:hover:not(.active) {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.03);
+    }
 
-/* 설정 탭 */
-.settings-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.sub-tab-bar { display: flex; background: #16213e; padding: 0 16px; border-bottom: 1px solid #0f3460; }
-.sub-tab-btn { padding: 10px 16px; cursor: pointer; border: none; background: none; color: #888; font-size: 13px; }
-.sub-tab-btn.active { color: #5ba8f5; border-bottom: 2px solid #5ba8f5; }
-.sub-tab-btn:hover:not(.active) { color: #ccc; }
-.sub-tab-content { display: none; flex: 1; overflow-y: auto; padding: 20px; }
-.sub-tab-content.active { display: block; }
+    .tab-content {
+      display: none;
+      flex: 1;
+      overflow: hidden;
+    }
 
-.form-group { margin-bottom: 14px; }
-.form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 5px; }
-.form-group input, .form-group textarea, .form-group select { width: 100%; background: #0f1e35; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 10px; border-radius: 4px; font-size: 13px; }
-.form-group textarea { min-height: 80px; resize: vertical; }
-.form-group input:focus, .form-group textarea:focus { outline: none; border-color: #5ba8f5; }
-.btn-primary { background: #0f3460; color: white; border: none; padding: 8px 18px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-.btn-primary:hover { background: #1a4a80; }
-.btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 3px; border: none; cursor: pointer; }
-.btn-edit { background: #1a4a80; color: #e0e0e0; }
-.btn-del { background: rgba(233,69,96,0.2); color: #e94560; }
-.btn-del:hover { background: rgba(233,69,96,0.4); }
+    .tab-content.active {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
 
-.skill-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #0d1b2e; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; margin-bottom: 6px; }
-.skill-info { flex: 1; }
-.skill-name { font-size: 13px; color: #e0e0e0; }
-.skill-desc { font-size: 11px; color: #666; margin-top: 2px; }
-.toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; inset: 0; background: #333; border-radius: 22px; cursor: pointer; transition: .3s; }
-.toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .3s; }
-input:checked + .toggle-slider { background: #28a745; }
-input:checked + .toggle-slider:before { transform: translateX(18px); }
+    /* Chat Tab */
+    .chat-sidebar {
+      width: 260px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
 
-.prompt-item { background: #0d1b2e; border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; }
-.prompt-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.prompt-item-name { font-size: 13px; font-weight: 600; color: #5ba8f5; }
-.prompt-item-desc { font-size: 11px; color: #666; }
-.prompt-item-content { font-size: 12px; color: #aaa; white-space: pre-wrap; max-height: 60px; overflow: hidden; text-overflow: ellipsis; }
+    .chat-sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
 
-/* 모달 */
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
-.modal-overlay.open { display: flex; }
-.modal { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
-.modal h3 { font-size: 15px; color: #ccc; margin-bottom: 14px; }
-.modal-close { float: right; cursor: pointer; font-size: 18px; color: #888; background: none; border: none; }
+    .chat-sidebar-header span {
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
 
-/* 스크롤바 */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #555; }
+    .btn-new {
+      background: var(--accent-primary);
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: var(--transition);
+    }
 
-.loading { display: inline-block; width: 14px; height: 14px; border: 2px solid #555; border-top-color: #e94560; border-radius: 50%; animation: spin .7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.empty-state { text-align: center; color: #555; padding: 40px; font-size: 14px; }
-</style>
+    .btn-new:hover {
+      background: var(--accent-primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .convo-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .convo-item {
+      margin: 2px 8px;
+      padding: 12px 14px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: var(--transition);
+    }
+
+    .convo-item:hover {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--text-primary);
+    }
+
+    .convo-item.active {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent-primary);
+      font-weight: 500;
+    }
+
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-main);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-word;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: var(--accent-secondary);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      border-bottom-left-radius: 2px;
+      border: 1px solid var(--border-color);
+    }
+
+    .msg.error {
+      align-self: center;
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--accent-danger);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .msg.system {
+      align-self: center;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 6px 16px;
+      border-radius: 20px;
+    }
+
+    .plan-card {
+      align-self: flex-start;
+      background: var(--bg-panel);
+      border: 1px solid var(--accent-secondary);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      max-width: 90%;
+      box-shadow: var(--shadow-md);
+    }
+
+    .plan-card h4 {
+      color: var(--accent-secondary);
+      font-size: 14px;
+      margin-bottom: 8px;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .plan-card p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .plan-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-confirm {
+      background: var(--accent-primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: var(--transition);
+    }
+
+    .btn-confirm:hover {
+      background: var(--accent-primary-hover);
+    }
+
+    .btn-cancel {
+      background: #475569;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 13px;
+      transition: var(--transition);
+    }
+
+    .btn-cancel:hover {
+      background: #334155;
+    }
+
+    .chat-input-row {
+      padding: 16px 24px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      resize: none;
+      min-height: 46px;
+      max-height: 150px;
+      transition: border-color 0.2s;
+      line-height: 1.5;
+    }
+
+    .chat-input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
+
+    .btn-send {
+      background: var(--accent-primary);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: var(--transition);
+    }
+
+    .btn-send:hover {
+      background: var(--accent-primary-hover);
+      transform: scale(1.02);
+    }
+
+    .btn-send:disabled {
+      background: var(--text-muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* History Tab */
+    .history-panel {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .filter-row input,
+    .filter-row select {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+
+    .filter-row input:focus,
+    .filter-row select:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
+
+    .btn-search {
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 13px;
+      transition: var(--transition);
+    }
+
+    .btn-search:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.02);
+      padding: 12px 16px;
+      text-align: left;
+      color: var(--text-secondary);
+      font-weight: 600;
+      border-bottom: 2px solid var(--border-color);
+      font-family: 'Outfit', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 11px;
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+      color: var(--text-secondary);
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-primary);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge.active {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-primary);
+    }
+
+    .badge.final {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-secondary);
+    }
+
+    .kw-tag {
+      display: inline-block;
+      background: rgba(16, 185, 129, 0.08);
+      color: var(--accent-primary);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin: 2px;
+      border: 1px solid rgba(16, 185, 129, 0.15);
+    }
+
+    .btn-icon {
+      background: transparent;
+      border: 1px solid transparent;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      transition: var(--transition);
+      color: var(--text-muted);
+    }
+
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .btn-danger {
+      color: var(--accent-danger);
+    }
+
+    .btn-danger:hover {
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    /* Functions Tab */
+    .functions-panel {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .stat-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      min-width: 160px;
+      box-shadow: var(--shadow-sm);
+      transition: var(--transition);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent-primary);
+    }
+
+    .stat-card .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-family: 'Outfit', sans-serif;
+      text-transform: uppercase;
+    }
+
+    .stat-card .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--accent-primary);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .func-group-header {
+      background: var(--bg-panel);
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      border: 1px solid var(--border-color);
+      transition: var(--transition);
+    }
+
+    .func-group-header:hover {
+      border-color: var(--text-muted);
+    }
+
+    .func-group-header span {
+      color: var(--accent-primary);
+      font-size: 12px;
+    }
+
+    .func-row {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      margin: 6px 0;
+      padding: 14px 18px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .func-row:hover {
+      border-color: var(--accent-secondary);
+      background: rgba(59, 130, 246, 0.03);
+    }
+
+    .func-name {
+      color: var(--accent-secondary);
+      font-weight: 600;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .func-desc {
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    pre.code-view {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      color: #94a3b8;
+      max-height: 350px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Settings Tab */
+    .settings-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sub-tab-bar {
+      display: flex;
+      background: var(--bg-panel);
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border-color);
+      gap: 4px;
+    }
+
+    .sub-tab-btn {
+      padding: 12px 18px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      transition: var(--transition);
+    }
+
+    .sub-tab-btn.active {
+      color: var(--accent-secondary);
+      border-bottom: 2px solid var(--accent-secondary);
+    }
+
+    .sub-tab-btn:hover:not(.active) {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .sub-tab-content {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    .sub-tab-content.active {
+      display: block;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--accent-secondary);
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: var(--transition);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .btn-edit {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent-secondary);
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+
+    .btn-edit:hover {
+      background: rgba(59, 130, 246, 0.2);
+    }
+
+    .btn-del {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--accent-danger);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .btn-del:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+
+    .skill-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin-bottom: 12px;
+      transition: var(--transition);
+    }
+
+    .skill-item:hover {
+      border-color: var(--accent-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .skill-info {
+      flex: 1;
+    }
+
+    .skill-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .skill-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #334155;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: .3s;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: .3s;
+    }
+
+    input:checked+.toggle-slider {
+      background: var(--accent-primary);
+    }
+
+    input:checked+.toggle-slider:before {
+      transform: translateX(20px);
+    }
+
+    .prompt-item {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      transition: var(--transition);
+    }
+
+    .prompt-item:hover {
+      border-color: var(--accent-secondary);
+    }
+
+    .prompt-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .prompt-item-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent-secondary);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .prompt-item-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .prompt-item-content {
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      max-height: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      background: var(--bg-input);
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--accent-secondary);
+    }
+
+    /* Modals */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.8);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-md);
+    }
+
+    .modal h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .modal-close {
+      float: right;
+      cursor: pointer;
+      font-size: 24px;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      transition: color 0.2s;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-main);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+      border: 2px solid var(--bg-main);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    .loading {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(16, 185, 129, 0.2);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 60px 20px;
+      font-size: 14px;
+      font-style: italic;
+    }
+
+    .btn-pipeline {
+      background: var(--bg-panel);
+      color: var(--accent-secondary);
+      border: 1px solid var(--accent-secondary);
+      padding: 10px 16px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: var(--transition);
+    }
+
+    .btn-pipeline:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .btn-pipeline.active {
+      background: var(--accent-secondary);
+      color: white;
+      border-color: var(--accent-secondary);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .design-card {
+      align-self: flex-start;
+      background: var(--bg-panel);
+      border: 1px solid var(--accent-primary);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      max-width: 90%;
+      box-shadow: var(--shadow-md);
+    }
+
+    .design-card h4 {
+      color: var(--accent-primary);
+      font-size: 14px;
+      margin-bottom: 10px;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .design-card p {
+      font-size: 14px;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    .ver-table {
+      width: 100%;
+      border-collapse: separate;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+
+    .ver-table th {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      text-align: left;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .ver-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    .ver-active {
+      color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    /* Alignment Fixes for Settings Tab */
+    #sub-prompts,
+    #sub-personas {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .form-group.checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: -8px;
+    }
+
+    .form-group.checkbox-group input {
+      width: auto;
+      height: 18px;
+      width: 18px;
+      cursor: pointer;
+    }
+
+    .form-group.checkbox-group label {
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+  </style>
+
 </head>
+
 <body>
 
-<!-- 탭 헤더 -->
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('chat')">채팅</button>
-  <button class="tab-btn" onclick="switchTab('history')">대화이력</button>
-  <button class="tab-btn" onclick="switchTab('functions')">함수</button>
-  <button class="tab-btn" onclick="switchTab('settings')">설정</button>
-</div>
-
-<!-- ═══ 채팅 탭 ═══ -->
-<div id="tab-chat" class="tab-content active">
-  <div class="chat-sidebar">
-    <div class="chat-sidebar-header">
-      <span>대화 목록</span>
-      <button class="btn-new" onclick="newConversation()">+ 새대화</button>
-    </div>
-    <div class="convo-list" id="convo-list"></div>
+  <!-- 탭 헤더 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('chat')">채팅</button>
+    <button class="tab-btn" onclick="switchTab('history')">대화이력</button>
+    <button class="tab-btn" onclick="switchTab('functions')">함수</button>
+    <button class="tab-btn" onclick="switchTab('settings')">설정</button>
   </div>
-  <div class="chat-main">
-    <div class="chat-messages" id="chat-messages">
-      <div class="empty-state">새 대화를 시작하거나 기존 대화를 선택하세요.</div>
-    </div>
-    <div class="chat-input-row">
-      <textarea class="chat-input" id="chat-input" placeholder="메시지를 입력하세요... (Shift+Enter 줄바꿈)" rows="1"
-        onkeydown="handleInputKey(event)"></textarea>
-      <button class="btn-send" id="btn-send" onclick="sendMessage()">전송</button>
-    </div>
-  </div>
-</div>
 
-<!-- ═══ 대화이력 탭 ═══ -->
-<div id="tab-history" class="tab-content">
-  <div class="history-panel">
-    <div class="filter-row">
-      <input id="hist-keyword" placeholder="키워드 검색..." style="width:180px">
-      <select id="hist-status">
-        <option value="">전체 상태</option>
-        <option value="active">active</option>
-        <option value="final">final</option>
-      </select>
-      <button class="btn-search" onclick="loadHistory()">검색</button>
+  <!-- ═══ 채팅 탭 ═══ -->
+  <div id="tab-chat" class="tab-content active">
+    <div class="chat-sidebar">
+      <div class="chat-sidebar-header">
+        <span>대화 목록</span>
+        <button class="btn-new" onclick="newConversation()">+ 새대화</button>
+      </div>
+      <div class="convo-list" id="convo-list"></div>
     </div>
-    <table id="hist-table">
-      <thead>
-        <tr><th>제목</th><th>상태</th><th>최근 업데이트</th><th>키워드</th><th></th></tr>
-      </thead>
-      <tbody id="hist-tbody"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ═══ 함수 탭 ═══ -->
-<div id="tab-functions" class="tab-content">
-  <div class="functions-panel">
-    <div class="stats-bar" id="func-stats"></div>
-    <div class="filter-row">
-      <input id="func-group-filter" placeholder="모듈 그룹 필터..." style="width:200px">
-      <label style="font-size:13px;color:#888;display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="func-show-all" onchange="loadFunctions()"> 비활성 포함
-      </label>
-      <button class="btn-search" onclick="loadFunctions()">검색</button>
-    </div>
-    <div id="func-list"></div>
-  </div>
-</div>
-
-<!-- ═══ 설정 탭 ═══ -->
-<div id="tab-settings" class="tab-content">
-  <div class="settings-panel">
-    <div class="sub-tab-bar">
-      <button class="sub-tab-btn active" onclick="switchSubTab('prompts')">시스템프롬프트</button>
-      <button class="sub-tab-btn" onclick="switchSubTab('personas')">페르소나</button>
-      <button class="sub-tab-btn" onclick="switchSubTab('skills')">스킬</button>
-      <button class="sub-tab-btn" onclick="switchSubTab('macros')">매크로</button>
-      <button class="sub-tab-btn" onclick="switchSubTab('workflows')">워크플로우</button>
-    </div>
-
-    <!-- 시스템프롬프트 -->
-    <div id="sub-prompts" class="sub-tab-content active">
-      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
-        <div style="flex:1;min-width:280px;">
-          <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;" id="prompt-form-title">새 프롬프트 추가</h3>
-          <div class="form-group"><label>이름</label><input id="pf-name" placeholder="prompt_name"></div>
-          <div class="form-group"><label>설명</label><input id="pf-desc" placeholder="설명 (선택)"></div>
-          <div class="form-group"><label>내용</label><textarea id="pf-content" placeholder="시스템 프롬프트 내용..." style="min-height:120px;"></textarea></div>
-          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" id="pf-default"> <label for="pf-default" style="margin:0;font-size:13px;color:#888;">기본값으로 설정</label>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn-primary" onclick="savePrompt()">저장</button>
-            <button class="btn-primary" style="background:#333;" onclick="clearPromptForm()">취소</button>
-          </div>
-        </div>
-        <div style="flex:2;min-width:300px;">
-          <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">프롬프트 목록</h3>
-          <div id="prompt-list"></div>
-        </div>
+    <div class="chat-main">
+      <div class="chat-messages" id="chat-messages">
+        <div class="empty-state">새 대화를 시작하거나 기존 대화를 선택하세요.</div>
+      </div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input" placeholder="메시지를 입력하세요... (Shift+Enter 줄바꿈)" rows="1"
+          onkeydown="handleInputKey(event)"></textarea>
+        <button class="btn-pipeline" id="btn-pipeline" onclick="togglePipelineMode()" title="4층 파이프라인 모드 전환">🔀
+          파이프라인</button>
+        <button class="btn-send" id="btn-send" onclick="sendMessage()">전송</button>
       </div>
     </div>
+  </div>
 
-    <!-- 페르소나 -->
-    <div id="sub-personas" class="sub-tab-content">
-      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
-        <div style="flex:1;min-width:280px;">
-          <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;" id="persona-form-title">새 페르소나 추가</h3>
-          <div class="form-group"><label>이름</label><input id="persona-name" placeholder="persona_name"></div>
-          <div class="form-group"><label>표시 이름</label><input id="persona-display" placeholder="표시 이름"></div>
-          <div class="form-group"><label>설명</label><input id="persona-desc" placeholder="설명 (선택)"></div>
-          <div class="form-group"><label>시스템 프롬프트</label><textarea id="persona-prompt" placeholder="시스템 프롬프트..." style="min-height:100px;"></textarea></div>
-          <div class="form-group"><label>허용 스킬 (쉼표 구분)</label><input id="persona-skills" placeholder="skill1,skill2"></div>
-          <div class="form-group"><label>키워드 (쉼표 구분)</label><input id="persona-kws" placeholder="keyword1,keyword2"></div>
-          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" id="persona-default"> <label for="persona-default" style="margin:0;font-size:13px;color:#888;">기본값</label>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn-primary" onclick="savePersona()">저장</button>
-            <button class="btn-primary" style="background:#333;" onclick="clearPersonaForm()">취소</button>
-          </div>
+  <!-- ═══ 대화이력 탭 ═══ -->
+  <div id="tab-history" class="tab-content">
+    <div class="history-panel">
+      <div class="sub-tab-bar" style="margin-bottom:12px;">
+        <button class="sub-tab-btn active" id="hist-sub-convos-btn" onclick="switchHistSubTab('convos')">대화</button>
+        <button class="sub-tab-btn" id="hist-sub-groups-btn" onclick="switchHistSubTab('groups')">그룹</button>
+      </div>
+      <div id="hist-sub-convos">
+        <div class="filter-row">
+          <input id="hist-keyword" placeholder="키워드 검색..." style="width:180px">
+          <select id="hist-status">
+            <option value="">전체 상태</option>
+            <option value="active">active</option>
+            <option value="final">final</option>
+          </select>
+          <button class="btn-search" onclick="loadHistory()">검색</button>
         </div>
-        <div style="flex:2;min-width:300px;">
-          <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">페르소나 목록</h3>
-          <div id="persona-list"></div>
-        </div>
+        <table id="hist-table">
+          <thead>
+            <tr>
+              <th>제목</th>
+              <th>상태</th>
+              <th>최근 업데이트</th>
+              <th>키워드</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="hist-tbody"></tbody>
+        </table>
+      </div>
+      <div id="hist-sub-groups" style="display:none;">
+        <table>
+          <thead>
+            <tr>
+              <th>그룹 ID</th>
+              <th>설명</th>
+              <th>대화 ID</th>
+            </tr>
+          </thead>
+          <tbody id="groups-tbody"></tbody>
+        </table>
       </div>
     </div>
+  </div>
 
-    <!-- 스킬 -->
-    <div id="sub-skills" class="sub-tab-content">
-      <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">스킬 목록</h3>
-      <div id="skill-list"></div>
-    </div>
-
-    <!-- 매크로 -->
-    <div id="sub-macros" class="sub-tab-content">
-      <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">매크로 목록</h3>
-      <div id="macro-list"></div>
-    </div>
-
-    <!-- 워크플로우 -->
-    <div id="sub-workflows" class="sub-tab-content">
-      <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">워크플로우 목록</h3>
-      <div id="workflow-list"></div>
+  <!-- ═══ 함수 탭 ═══ -->
+  <div id="tab-functions" class="tab-content">
+    <div class="functions-panel">
+      <div class="stats-bar" id="func-stats"></div>
+      <div class="filter-row">
+        <input id="func-group-filter" placeholder="모듈 그룹 필터..." style="width:200px">
+        <label style="font-size:13px;color:#888;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="func-show-all" onchange="loadFunctions()"> 비활성 포함
+        </label>
+        <button class="btn-search" onclick="loadFunctions()">검색</button>
+      </div>
+      <div id="func-list"></div>
     </div>
   </div>
-</div>
 
-<!-- 히스토리 모달 -->
-<div class="modal-overlay" id="hist-modal">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('hist-modal')">✕</button>
-    <h3 id="hist-modal-title">대화 이력</h3>
-    <div id="hist-modal-body" style="font-size:12px;color:#aaa;white-space:pre-wrap;max-height:60vh;overflow-y:auto;"></div>
+  <!-- ═══ 설정 탭 ═══ -->
+  <div id="tab-settings" class="tab-content">
+    <div class="settings-panel">
+      <div class="sub-tab-bar">
+        <button class="sub-tab-btn active" onclick="switchSubTab('prompts')">시스템프롬프트</button>
+        <button class="sub-tab-btn" onclick="switchSubTab('personas')">페르소나</button>
+        <button class="sub-tab-btn" onclick="switchSubTab('skills')">스킬</button>
+        <button class="sub-tab-btn" onclick="switchSubTab('macros')">매크로</button>
+        <button class="sub-tab-btn" onclick="switchSubTab('workflows')">워크플로우</button>
+      </div>
+
+      <!-- 시스템프롬프트 -->
+      <div id="sub-prompts" class="sub-tab-content active">
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:1;min-width:280px;">
+            <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;" id="prompt-form-title">새 프롬프트 추가</h3>
+            <div class="form-group"><label>이름</label><input id="pf-name" placeholder="prompt_name"></div>
+            <div class="form-group"><label>설명</label><input id="pf-desc" placeholder="설명 (선택)"></div>
+            <div class="form-group"><label>내용</label><textarea id="pf-content" placeholder="시스템 프롬프트 내용..."
+                style="min-height:120px;"></textarea></div>
+            <div class="form-group checkbox-group">
+              <input type="checkbox" id="pf-default"> <label for="pf-default">기본값으로 설정</label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-primary" onclick="savePrompt()">저장</button>
+              <button class="btn-primary" style="background:#333;" onclick="clearPromptForm()">취소</button>
+            </div>
+          </div>
+          <div style="flex:2;min-width:300px;">
+            <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">프롬프트 목록</h3>
+            <div id="prompt-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 페르소나 -->
+      <div id="sub-personas" class="sub-tab-content">
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:1;min-width:280px;">
+            <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;" id="persona-form-title">새 페르소나 추가</h3>
+            <div class="form-group"><label>이름</label><input id="persona-name" placeholder="persona_name"></div>
+            <div class="form-group"><label>표시 이름</label><input id="persona-display" placeholder="표시 이름"></div>
+            <div class="form-group"><label>설명</label><input id="persona-desc" placeholder="설명 (선택)"></div>
+            <div class="form-group"><label>시스템 프롬프트</label><textarea id="persona-prompt" placeholder="시스템 프롬프트..."
+                style="min-height:100px;"></textarea></div>
+            <div class="form-group"><label>허용 스킬 (쉼표 구분)</label><input id="persona-skills" placeholder="skill1,skill2">
+            </div>
+            <div class="form-group"><label>키워드 (쉼표 구분)</label><input id="persona-kws" placeholder="keyword1,keyword2">
+            </div>
+            <div class="form-group checkbox-group">
+              <input type="checkbox" id="persona-default"> <label for="persona-default">기본값</label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-primary" onclick="savePersona()">저장</button>
+              <button class="btn-primary" style="background:#333;" onclick="clearPersonaForm()">취소</button>
+            </div>
+          </div>
+          <div style="flex:2;min-width:300px;">
+            <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">페르소나 목록</h3>
+            <div id="persona-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 스킬 -->
+      <div id="sub-skills" class="sub-tab-content">
+        <h3 style="font-size:14px;color:#ccc;margin-bottom:12px;">스킬 목록</h3>
+        <div id="skill-list"></div>
+      </div>
+
+      <!-- 매크로 -->
+      <div id="sub-macros" class="sub-tab-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="font-size:14px;color:#ccc;">매크로 목록</h3>
+          <button class="btn-primary" onclick="openMacroModal()">+ 추가</button>
+        </div>
+        <div id="macro-list"></div>
+      </div>
+
+      <!-- 워크플로우 -->
+      <div id="sub-workflows" class="sub-tab-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="font-size:14px;color:#ccc;">워크플로우 목록</h3>
+          <button class="btn-primary" onclick="openWorkflowModal()">+ 추가</button>
+        </div>
+        <div id="workflow-list"></div>
+      </div>
+    </div>
   </div>
-</div>
 
-<script>
-// ═══ 전역 상태 ═══
-let currentConvoId = null;
-let currentHistory = [];
-let isBusy = false;
-let editingPromptName = null;
-let editingPersonaName = null;
+  <!-- 히스토리 모달 -->
+  <div class="modal-overlay" id="hist-modal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('hist-modal')">✕</button>
+      <h3 id="hist-modal-title">대화 이력</h3>
+      <div id="hist-modal-body" style="font-size:12px;color:#aaa;white-space:pre-wrap;max-height:60vh;overflow-y:auto;">
+      </div>
+    </div>
+  </div>
 
-// ═══ 유틸 ═══
-const API = (path, opts={}) => fetch('/api/v1' + path, {
-  headers: {'Content-Type': 'application/json'},
-  ...opts
-}).then(r => r.json());
+  <!-- 함수 버전 이력 모달 -->
+  <div class="modal-overlay" id="ver-modal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('ver-modal')">✕</button>
+      <h3 id="ver-modal-title">버전 이력</h3>
+      <div id="ver-modal-body"></div>
+    </div>
+  </div>
 
-const AGENT = (path, body) => fetch(path, {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify(body)
-}).then(r => r.json());
+  <!-- 매크로 추가/편집 모달 -->
+  <div class="modal-overlay" id="macro-modal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('macro-modal')">✕</button>
+      <h3 id="macro-modal-title">매크로 추가</h3>
+      <div class="form-group"><label>이름</label><input id="mf-name" placeholder="macro_name"></div>
+      <div class="form-group"><label>설명</label><input id="mf-desc" placeholder="설명 (선택)"></div>
+      <div class="form-group"><label>템플릿</label><textarea id="mf-template" placeholder="{{variable}} 형식으로 변수 사용"
+          style="min-height:100px;"></textarea></div>
+      <div class="form-group"><label>변수 (자동 파싱)</label>
+        <div id="mf-vars" style="font-size:12px;color:#888;padding:6px 0;"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" onclick="saveMacro()">저장</button>
+        <button class="btn-primary" style="background:#333;" onclick="closeModal('macro-modal')">취소</button>
+      </div>
+    </div>
+  </div>
 
-function uuid4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
+  <!-- 워크플로우 추가/편집 모달 -->
+  <div class="modal-overlay" id="workflow-modal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('workflow-modal')">✕</button>
+      <h3 id="wf-modal-title">워크플로우 추가</h3>
+      <div class="form-group"><label>이름</label><input id="wff-name" placeholder="workflow_name"></div>
+      <div class="form-group"><label>설명</label><input id="wff-desc" placeholder="설명 (선택)"></div>
+      <div class="form-group"><label>단계 (JSON 배열)</label><textarea id="wff-steps"
+          placeholder='[{"action":"step1"},{"action":"step2"}]'
+          style="min-height:120px;font-family:monospace;"></textarea></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" onclick="saveWorkflow()">저장</button>
+        <button class="btn-primary" style="background:#333;" onclick="closeModal('workflow-modal')">취소</button>
+      </div>
+    </div>
+  </div>
 
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+  <script>
+    // ═══ 전역 상태 ═══
+    let currentConvoId = null;
+    let currentHistory = [];
+    let isBusy = false;
+    let editingPromptName = null;
+    let editingPersonaName = null;
+    let pipelineMode = false;
+    let editingMacroName = null;
+    let editingWorkflowName = null;
 
-function setBusy(v) {
-  isBusy = v;
-  document.getElementById('btn-send').disabled = v;
-  document.getElementById('chat-input').disabled = v;
-}
+    // ═══ 유틸 ═══
+    const API = (path, opts = {}) => fetch('/api/v1' + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts
+    }).then(r => r.json());
 
-// ═══ 탭 전환 ═══
-function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    const tabs = ['chat','history','functions','settings'];
-    b.classList.toggle('active', tabs[i] === name);
-  });
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
+    const AGENT = (path, body) => fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(r => r.json());
 
-  if (name === 'history') loadHistory();
-  if (name === 'functions') { loadFunctions(); loadFuncStats(); }
-  if (name === 'settings') loadSettingsTab('prompts');
-}
-
-function switchSubTab(name) {
-  document.querySelectorAll('.sub-tab-btn').forEach((b,i) => {
-    const tabs = ['prompts','personas','skills','macros','workflows'];
-    b.classList.toggle('active', tabs[i] === name);
-  });
-  document.querySelectorAll('.sub-tab-content').forEach(el => el.classList.remove('active'));
-  document.getElementById('sub-' + name).classList.add('active');
-  loadSettingsTab(name);
-}
-
-// ═══ 채팅 ═══
-async function loadConvoList() {
-  const list = await API('/conversations');
-  const el = document.getElementById('convo-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state" style="padding:20px;font-size:12px;">대화 없음</div>'; return; }
-  el.innerHTML = list.map(c =>
-    `<div class="convo-item${c.id===currentConvoId?' active':''}" onclick="openConversation('${c.id}')" title="${escapeHtml(c.title)}">
-      ${escapeHtml(c.title||'Untitled')}
-    </div>`
-  ).join('');
-}
-
-function newConversation() {
-  currentConvoId = uuid4();
-  currentHistory = [];
-  document.getElementById('chat-messages').innerHTML = '<div class="msg system">새 대화가 시작되었습니다.</div>';
-  loadConvoList();
-}
-
-async function openConversation(id) {
-  currentConvoId = id;
-  currentHistory = [];
-  const data = await API('/conversations/' + id);
-  if (data.detail) { alert(data.detail); return; }
-  currentHistory = data.history || [];
-  const el = document.getElementById('chat-messages');
-  el.innerHTML = '';
-  // 히스토리 렌더
-  for (const entry of currentHistory) {
-    if (typeof entry !== 'string') continue;
-    if (entry.startsWith('사용자 요청:')) {
-      appendMsg('user', entry.replace('사용자 요청:','').trim());
-    } else if (entry.startsWith('최종 답변:')) {
-      appendMsg('assistant', entry.replace('최종 답변:','').trim());
-    } else {
-      appendMsg('system', entry);
+    function uuid4() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
     }
-  }
-  loadConvoList();
-}
 
-function appendMsg(type, text) {
-  const el = document.getElementById('chat-messages');
-  const d = document.createElement('div');
-  d.className = 'msg ' + type;
-  d.textContent = text;
-  el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
-  return d;
-}
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
-function appendPlanCard(group, onConfirm) {
-  const el = document.getElementById('chat-messages');
-  const d = document.createElement('div');
-  d.className = 'plan-card';
-  d.innerHTML = `
-    <h4>실행 계획: [${escapeHtml(group.group_id||'')}]</h4>
-    <p>${escapeHtml(group.description||'')}</p>
+    function setBusy(v) {
+      isBusy = v;
+      document.getElementById('btn-send').disabled = v;
+      document.getElementById('chat-input').disabled = v;
+    }
+
+    // ═══ 탭 전환 ═══
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach((b, i) => {
+        const tabs = ['chat', 'history', 'functions', 'settings'];
+        b.classList.toggle('active', tabs[i] === name);
+      });
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+
+      if (name === 'history') { loadHistory(); }
+      if (name === 'functions') { loadFunctions(); loadFuncStats(); }
+      if (name === 'settings') loadSettingsTab('prompts');
+    }
+
+    function switchSubTab(name) {
+      document.querySelectorAll('.sub-tab-btn').forEach((b, i) => {
+        const tabs = ['prompts', 'personas', 'skills', 'macros', 'workflows'];
+        b.classList.toggle('active', tabs[i] === name);
+      });
+      document.querySelectorAll('.sub-tab-content').forEach(el => el.classList.remove('active'));
+      document.getElementById('sub-' + name).classList.add('active');
+      loadSettingsTab(name);
+    }
+
+    // ═══ 채팅 ═══
+    async function loadConvoList() {
+      const list = await API('/conversations');
+      const el = document.getElementById('convo-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state" style="padding:20px;font-size:12px;">대화 없음</div>'; return; }
+      el.innerHTML = list.map(c =>
+        `<div class="convo-item${c.id === currentConvoId ? ' active' : ''}" onclick="openConversation('${c.id}')" title="${escapeHtml(c.title)}">
+      ${escapeHtml(c.title || 'Untitled')}
+    </div>`
+      ).join('');
+    }
+
+    function newConversation() {
+      currentConvoId = uuid4();
+      currentHistory = [];
+      document.getElementById('chat-messages').innerHTML = '<div class="msg system">새 대화가 시작되었습니다.</div>';
+      loadConvoList();
+    }
+
+    async function openConversation(id) {
+      currentConvoId = id;
+      currentHistory = [];
+      const data = await API('/conversations/' + id);
+      if (data.detail) { alert(data.detail); return; }
+      currentHistory = data.history || [];
+      const el = document.getElementById('chat-messages');
+      el.innerHTML = '';
+      // 히스토리 렌더
+      for (const entry of currentHistory) {
+        if (typeof entry !== 'string') continue;
+        if (entry.startsWith('사용자 요청:')) {
+          appendMsg('user', entry.replace('사용자 요청:', '').trim());
+        } else if (entry.startsWith('최종 답변:')) {
+          appendMsg('assistant', entry.replace('최종 답변:', '').trim());
+        } else {
+          appendMsg('system', entry);
+        }
+      }
+      loadConvoList();
+    }
+
+    function appendMsg(type, text) {
+      const el = document.getElementById('chat-messages');
+      const d = document.createElement('div');
+      d.className = 'msg ' + type;
+      d.textContent = text;
+      el.appendChild(d);
+      el.scrollTop = el.scrollHeight;
+      return d;
+    }
+
+    function appendPlanCard(group, onConfirm) {
+      const el = document.getElementById('chat-messages');
+      const d = document.createElement('div');
+      d.className = 'plan-card';
+      d.innerHTML = `
+    <h4>실행 계획: [${escapeHtml(group.group_id || '')}]</h4>
+    <p>${escapeHtml(group.description || '')}</p>
     <div class="plan-actions">
       <button class="btn-confirm" id="btn-plan-confirm">확인</button>
       <button class="btn-cancel" id="btn-plan-cancel">취소</button>
     </div>`;
-  el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
-  d.querySelector('#btn-plan-confirm').onclick = () => { d.querySelector('.plan-actions').remove(); onConfirm(); };
-  d.querySelector('#btn-plan-cancel').onclick = () => { d.remove(); setBusy(false); };
-  return d;
-}
+      el.appendChild(d);
+      el.scrollTop = el.scrollHeight;
+      d.querySelector('#btn-plan-confirm').onclick = () => { d.querySelector('.plan-actions').remove(); onConfirm(); };
+      d.querySelector('#btn-plan-cancel').onclick = () => { d.remove(); setBusy(false); };
+      return d;
+    }
 
-function handleInputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-}
+    function handleInputKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    }
 
-async function sendMessage() {
-  if (isBusy) return;
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
+    async function sendMessage() {
+      if (isBusy) return;
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
 
-  if (!currentConvoId) { currentConvoId = uuid4(); }
-  appendMsg('user', text);
-  setBusy(true);
+      if (!currentConvoId) { currentConvoId = uuid4(); }
+      appendMsg('user', text);
+      setBusy(true);
 
-  const spinner = appendMsg('system', '처리 중...');
+      const spinner = appendMsg('system', '처리 중...');
 
-  try {
-    const res = await AGENT('/agent/decide_and_act', {
-      conversation_id: currentConvoId,
-      history: currentHistory,
-      user_input: text
-    });
-    spinner.remove();
-    currentHistory = res.history || currentHistory;
-    await handleAgentResponse(res);
-  } catch(e) {
-    spinner.remove();
-    appendMsg('error', '요청 실패: ' + e.message);
-    setBusy(false);
-  }
-  loadConvoList();
-}
+      try {
+        const endpoint = pipelineMode ? '/agent/pipeline' : '/agent/decide_and_act';
+        const res = await AGENT(endpoint, {
+          conversation_id: currentConvoId,
+          history: currentHistory,
+          user_input: text
+        });
+        spinner.remove();
+        currentHistory = res.history || currentHistory;
+        await handleAgentResponse(res);
+      } catch (e) {
+        spinner.remove();
+        appendMsg('error', '요청 실패: ' + e.message);
+        setBusy(false);
+      }
+      loadConvoList();
+    }
 
-async function handleAgentResponse(res) {
-  if (res.status === 'PLAN_CONFIRMATION') {
-    appendPlanCard(res.execution_group, executeGroup);
-    setBusy(false); // 사용자가 확인 버튼 누를 때까지 대기
-    // 확인 버튼이 setBusy(true) 후 executeGroup 호출
-  } else if (res.status === 'STEP_EXECUTED') {
-    appendMsg('system', res.message || '단계 실행 완료');
-    await planNext();
-  } else if (res.status === 'FINAL_ANSWER') {
-    appendMsg('assistant', res.message || '');
-    setBusy(false);
-    loadConvoList();
-  } else if (res.status === 'ERROR') {
-    appendMsg('error', res.message || '오류 발생');
-    setBusy(false);
-  } else {
-    appendMsg('system', JSON.stringify(res));
-    setBusy(false);
-  }
-}
+    function togglePipelineMode() {
+      pipelineMode = !pipelineMode;
+      const btn = document.getElementById('btn-pipeline');
+      btn.classList.toggle('active', pipelineMode);
+      btn.title = pipelineMode ? '파이프라인 모드 ON (클릭하여 해제)' : '4층 파이프라인 모드 전환';
+    }
 
-async function executeGroup() {
-  setBusy(true);
-  const spinner = appendMsg('system', '실행 중...');
-  try {
-    const res = await AGENT('/agent/execute_group', {
-      conversation_id: currentConvoId,
-      history: currentHistory
-    });
-    spinner.remove();
-    currentHistory = res.history || currentHistory;
-    await handleAgentResponse(res);
-  } catch(e) {
-    spinner.remove();
-    appendMsg('error', '실행 실패: ' + e.message);
-    setBusy(false);
-  }
-}
+    async function handleAgentResponse(res) {
+      if (res.status === 'DESIGN_CONFIRMATION') {
+        appendDesignCard(res.message || '', res);
+        setBusy(false);
+      } else if (res.status === 'PLAN_CONFIRMATION') {
+        appendPlanCard(res.execution_group, executeGroup);
+        setBusy(false); // 사용자가 확인 버튼 누를 때까지 대기
+      } else if (res.status === 'STEP_EXECUTED') {
+        appendMsg('system', res.message || '단계 실행 완료');
+        await planNext();
+      } else if (res.status === 'FINAL_ANSWER') {
+        appendMsg('assistant', res.message || '');
+        setBusy(false);
+        loadConvoList();
+      } else if (res.status === 'ERROR') {
+        appendMsg('error', res.message || '오류 발생');
+        setBusy(false);
+      } else {
+        appendMsg('system', JSON.stringify(res));
+        setBusy(false);
+      }
+    }
 
-async function planNext() {
-  setBusy(true);
-  const spinner = appendMsg('system', '다음 단계 계획 중...');
-  try {
-    const res = await AGENT('/agent/decide_and_act', {
-      conversation_id: currentConvoId,
-      history: currentHistory
-    });
-    spinner.remove();
-    currentHistory = res.history || currentHistory;
-    await handleAgentResponse(res);
-  } catch(e) {
-    spinner.remove();
-    appendMsg('error', '재계획 실패: ' + e.message);
-    setBusy(false);
-  }
-}
+    function appendDesignCard(message) {
+      const el = document.getElementById('chat-messages');
+      const d = document.createElement('div');
+      d.className = 'design-card';
+      const h4 = document.createElement('h4');
+      h4.textContent = '🎨 설계안';
+      const p = document.createElement('p');
+      p.textContent = message;
+      const actions = document.createElement('div');
+      actions.className = 'plan-actions';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'btn-confirm';
+      confirmBtn.textContent = '✅ 설계 확인';
+      confirmBtn.onclick = () => sendPipelineAction('confirm_design', d);
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn-cancel';
+      rejectBtn.textContent = '❌ 거절';
+      rejectBtn.onclick = () => sendPipelineAction('reject_design', d);
+      actions.appendChild(confirmBtn);
+      actions.appendChild(rejectBtn);
+      d.appendChild(h4);
+      d.appendChild(p);
+      d.appendChild(actions);
+      el.appendChild(d);
+      el.scrollTop = el.scrollHeight;
+      return d;
+    }
 
-// ═══ 대화이력 ═══
-async function loadHistory() {
-  const kw = document.getElementById('hist-keyword').value.trim();
-  const st = document.getElementById('hist-status').value;
-  let url = '/conversations?';
-  if (kw) url += `keyword=${encodeURIComponent(kw)}&`;
-  if (st) url += `status=${st}&`;
-  const list = await API(url);
-  const tbody = document.getElementById('hist-tbody');
-  if (!list.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">대화 없음</td></tr>'; return; }
-  tbody.innerHTML = list.map(c => `
+    async function sendPipelineAction(action, cardEl) {
+      const actionsEl = cardEl.querySelector('.plan-actions');
+      if (actionsEl) actionsEl.remove();
+      setBusy(true);
+      const spinnerText = action === 'confirm_design' ? '설계 확인 중...' : '재설계 중...';
+      const spinner = appendMsg('system', spinnerText);
+      try {
+        const res = await AGENT('/agent/pipeline', {
+          conversation_id: currentConvoId,
+          history: currentHistory,
+          pipeline_action: action
+        });
+        spinner.remove();
+        currentHistory = res.history || currentHistory;
+        await handleAgentResponse(res);
+      } catch (e) {
+        spinner.remove();
+        appendMsg('error', '파이프라인 오류: ' + e.message);
+        setBusy(false);
+      }
+    }
+
+    async function executeGroup() {
+      setBusy(true);
+      const spinner = appendMsg('system', '실행 중...');
+      try {
+        const res = await AGENT('/agent/execute_group', {
+          conversation_id: currentConvoId,
+          history: currentHistory
+        });
+        spinner.remove();
+        currentHistory = res.history || currentHistory;
+        await handleAgentResponse(res);
+      } catch (e) {
+        spinner.remove();
+        appendMsg('error', '실행 실패: ' + e.message);
+        setBusy(false);
+      }
+    }
+
+    async function planNext() {
+      setBusy(true);
+      const spinner = appendMsg('system', '다음 단계 계획 중...');
+      try {
+        const res = await AGENT('/agent/decide_and_act', {
+          conversation_id: currentConvoId,
+          history: currentHistory
+        });
+        spinner.remove();
+        currentHistory = res.history || currentHistory;
+        await handleAgentResponse(res);
+      } catch (e) {
+        spinner.remove();
+        appendMsg('error', '재계획 실패: ' + e.message);
+        setBusy(false);
+      }
+    }
+
+    // ═══ 대화이력 서브탭 ═══
+    function switchHistSubTab(name) {
+      document.getElementById('hist-sub-convos').style.display = name === 'convos' ? '' : 'none';
+      document.getElementById('hist-sub-groups').style.display = name === 'groups' ? '' : 'none';
+      document.getElementById('hist-sub-convos-btn').classList.toggle('active', name === 'convos');
+      document.getElementById('hist-sub-groups-btn').classList.toggle('active', name === 'groups');
+      if (name === 'groups') loadGroups();
+    }
+
+    async function loadGroups() {
+      const list = await API('/groups');
+      const tbody = document.getElementById('groups-tbody');
+      if (!list || !list.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">그룹 없음</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      for (const g of list) {
+        const tr = document.createElement('tr');
+        [g.group_id || g.id, g.description || '', g.conversation_id || ''].forEach(val => {
+          const td = document.createElement('td');
+          td.textContent = String(val);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ═══ 대화이력 ═══
+    async function loadHistory() {
+      const kw = document.getElementById('hist-keyword').value.trim();
+      const st = document.getElementById('hist-status').value;
+      let url = '/conversations?';
+      if (kw) url += `keyword=${encodeURIComponent(kw)}&`;
+      if (st) url += `status=${st}&`;
+      const list = await API(url);
+      const tbody = document.getElementById('hist-tbody');
+      if (!list.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">대화 없음</td></tr>'; return; }
+      tbody.innerHTML = list.map(c => `
     <tr>
-      <td>${escapeHtml(c.title||'Untitled')}</td>
+      <td>${escapeHtml(c.title || 'Untitled')}</td>
       <td><span class="badge ${c.status}">${c.status}</span></td>
-      <td>${(c.last_updated||'').slice(0,16)}</td>
-      <td>${(c.keywords||[]).map(k=>`<span class="kw-tag">${escapeHtml(k)}</span>`).join('')}</td>
+      <td>${(c.last_updated || '').slice(0, 16)}</td>
+      <td>${(c.keywords || []).map(k => `<span class="kw-tag">${escapeHtml(k)}</span>`).join('')}</td>
       <td>
-        <button class="btn-icon" title="이력 보기" onclick="showHistModal('${c.id}','${escapeHtml(c.title||'')}')">👁</button>
+        <button class="btn-icon" title="이력 보기" onclick="showHistModal('${c.id}','${escapeHtml(c.title || '')}')">👁</button>
         <button class="btn-icon btn-danger" title="삭제" onclick="deleteConvo('${c.id}')">🗑</button>
       </td>
     </tr>`).join('');
-}
+    }
 
-async function showHistModal(id, title) {
-  const data = await API('/conversations/' + id);
-  document.getElementById('hist-modal-title').textContent = title || id;
-  document.getElementById('hist-modal-body').textContent = (data.history||[]).join('\n');
-  document.getElementById('hist-modal').classList.add('open');
-}
+    async function showHistModal(id, title) {
+      const data = await API('/conversations/' + id);
+      document.getElementById('hist-modal-title').textContent = title || id;
+      document.getElementById('hist-modal-body').textContent = (data.history || []).join('\n');
+      document.getElementById('hist-modal').classList.add('open');
+    }
 
-async function deleteConvo(id) {
-  if (!confirm('대화를 삭제하시겠습니까?')) return;
-  await API('/conversations/' + id, {method:'DELETE'});
-  loadHistory();
-}
+    async function deleteConvo(id) {
+      if (!confirm('대화를 삭제하시겠습니까?')) return;
+      await API('/conversations/' + id, { method: 'DELETE' });
+      loadHistory();
+    }
 
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-// ═══ 함수 ═══
-async function loadFuncStats() {
-  const stats = await API('/functions/stats');
-  const el = document.getElementById('func-stats');
-  const rate = stats.success_rate != null ? (stats.success_rate * 100).toFixed(1) + '%' : 'N/A';
-  const avg = stats.avg_duration_ms != null ? stats.avg_duration_ms.toFixed(1) + 'ms' : 'N/A';
-  el.innerHTML = `
-    <div class="stat-card"><div class="stat-label">전체 호출</div><div class="stat-value">${stats.total_calls||0}</div></div>
+    // ═══ 함수 ═══
+    async function loadFuncStats() {
+      const stats = await API('/functions/stats');
+      const el = document.getElementById('func-stats');
+      const rate = stats.success_rate != null ? (stats.success_rate * 100).toFixed(1) + '%' : 'N/A';
+      const avg = stats.avg_duration_ms != null ? stats.avg_duration_ms.toFixed(1) + 'ms' : 'N/A';
+      el.innerHTML = `
+    <div class="stat-card"><div class="stat-label">전체 호출</div><div class="stat-value">${stats.total_calls || 0}</div></div>
     <div class="stat-card"><div class="stat-label">성공률</div><div class="stat-value">${rate}</div></div>
     <div class="stat-card"><div class="stat-label">평균 소요</div><div class="stat-value">${avg}</div></div>
   `;
-}
+    }
 
-async function loadFunctions() {
-  const grp = document.getElementById('func-group-filter').value.trim();
-  const showAll = document.getElementById('func-show-all').checked;
-  let url = `/functions?active_only=${!showAll}`;
-  if (grp) url += `&module_group=${encodeURIComponent(grp)}`;
-  const list = await API(url);
-  const el = document.getElementById('func-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">함수 없음</div>'; return; }
+    async function loadFunctions() {
+      const grp = document.getElementById('func-group-filter').value.trim();
+      const showAll = document.getElementById('func-show-all').checked;
+      let url = `/functions?active_only=${!showAll}`;
+      if (grp) url += `&module_group=${encodeURIComponent(grp)}`;
+      const list = await API(url);
+      const el = document.getElementById('func-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">함수 없음</div>'; return; }
 
-  // 모듈 그룹별 그루핑
-  const groups = {};
-  for (const f of list) {
-    if (!groups[f.module_group]) groups[f.module_group] = [];
-    groups[f.module_group].push(f);
-  }
-  el.innerHTML = Object.entries(groups).map(([grp, fns]) => `
-    <div class="func-group-header" onclick="toggleGroup(this)">
-      ${escapeHtml(grp)} <span>${fns.length}개 ▾</span>
-    </div>
-    <div class="func-group-body">
-      ${fns.map(f => `
-        <div class="func-row" onclick="showFuncCode(this,'${escapeHtml(f.func_name)}')">
-          <div class="func-name">${escapeHtml(f.func_name)} <small style="color:#555">v${f.version}</small></div>
-          <div class="func-desc">${escapeHtml(f.description||'설명 없음')}</div>
-        </div>
-        <pre class="code-view" style="display:none">${escapeHtml(f.code||'')}</pre>
-      `).join('')}
-    </div>`).join('');
-}
+      // 모듈 그룹별 그루핑
+      const groups = {};
+      for (const f of list) {
+        if (!groups[f.module_group]) groups[f.module_group] = [];
+        groups[f.module_group].push(f);
+      }
+      const container = document.createElement('div');
+      for (const [grp, fns] of Object.entries(groups)) {
+        const hdr = document.createElement('div');
+        hdr.className = 'func-group-header';
+        hdr.onclick = () => toggleGroup(hdr);
+        hdr.innerHTML = escapeHtml(grp) + ' <span>' + fns.length + '개 ▾</span>';
+        container.appendChild(hdr);
+        const body = document.createElement('div');
+        body.className = 'func-group-body';
+        for (const f of fns) {
+          const row = document.createElement('div');
+          row.className = 'func-row';
+          const nameDiv = document.createElement('div');
+          nameDiv.className = 'func-name';
+          nameDiv.textContent = f.func_name;
+          const vSmall = document.createElement('small');
+          vSmall.style.color = '#555';
+          vSmall.textContent = ' v' + f.version;
+          nameDiv.appendChild(vSmall);
+          const verBtn = document.createElement('button');
+          verBtn.className = 'btn-icon';
+          verBtn.style.cssText = 'font-size:12px;margin-left:8px;';
+          verBtn.title = '버전 이력';
+          verBtn.textContent = '📜 버전';
+          verBtn.onclick = (e) => { e.stopPropagation(); showFuncVersions(f.func_name); };
+          nameDiv.appendChild(verBtn);
+          const descDiv = document.createElement('div');
+          descDiv.className = 'func-desc';
+          descDiv.textContent = f.description || '설명 없음';
+          row.appendChild(nameDiv);
+          row.appendChild(descDiv);
+          row.onclick = () => showFuncCode(row, f.func_name);
+          body.appendChild(row);
+          const pre = document.createElement('pre');
+          pre.className = 'code-view';
+          pre.style.display = 'none';
+          pre.textContent = f.code || '';
+          body.appendChild(pre);
+        }
+        container.appendChild(body);
+      }
+      el.innerHTML = '';
+      el.appendChild(container);
+    }
 
-function toggleGroup(el) {
-  const body = el.nextElementSibling;
-  body.style.display = body.style.display === 'none' ? '' : 'none';
-}
+    async function showFuncVersions(funcName) {
+      try {
+        const versions = await API('/functions/' + encodeURIComponent(funcName) + '/versions');
+        document.getElementById('ver-modal-title').textContent = funcName + ' 버전 이력';
+        const body = document.getElementById('ver-modal-body');
+        if (!versions || versions.detail) {
+          body.textContent = versions.detail || '버전 정보 없음';
+        } else {
+          const table = document.createElement('table');
+          table.className = 'ver-table';
+          const thead = document.createElement('thead');
+          const hrow = document.createElement('tr');
+          ['버전', '활성', '생성일', '코드 미리보기'].forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            hrow.appendChild(th);
+          });
+          thead.appendChild(hrow);
+          table.appendChild(thead);
+          const tbody = document.createElement('tbody');
+          for (const v of versions) {
+            const tr = document.createElement('tr');
+            [v.version, v.is_active ? '✓' : '', (v.created_at || '').slice(0, 16), (v.code || '').slice(0, 50)].forEach((val, i) => {
+              const td = document.createElement('td');
+              td.textContent = val;
+              if (i === 1 && v.is_active) td.className = 'ver-active';
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          }
+          table.appendChild(tbody);
+          body.innerHTML = '';
+          body.appendChild(table);
+        }
+        document.getElementById('ver-modal').classList.add('open');
+      } catch (e) {
+        alert('버전 이력 조회 실패: ' + e.message);
+      }
+    }
 
-function showFuncCode(rowEl, name) {
-  const pre = rowEl.nextElementSibling;
-  pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
-}
+    function toggleGroup(el) {
+      const body = el.nextElementSibling;
+      body.style.display = body.style.display === 'none' ? '' : 'none';
+    }
 
-// ═══ 설정 ═══
-async function loadSettingsTab(name) {
-  if (name === 'prompts') await loadPrompts();
-  else if (name === 'personas') await loadPersonas();
-  else if (name === 'skills') await loadSkills();
-  else if (name === 'macros') await loadMacros();
-  else if (name === 'workflows') await loadWorkflows();
-}
+    function showFuncCode(rowEl, name) {
+      const pre = rowEl.nextElementSibling;
+      pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+    }
 
-// 시스템프롬프트
-async function loadPrompts() {
-  const list = await API('/settings/prompts');
-  const el = document.getElementById('prompt-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">프롬프트 없음</div>'; return; }
-  el.innerHTML = list.map(p => `
+    // ═══ 설정 ═══
+    async function loadSettingsTab(name) {
+      if (name === 'prompts') await loadPrompts();
+      else if (name === 'personas') await loadPersonas();
+      else if (name === 'skills') await loadSkills();
+      else if (name === 'macros') await loadMacros();
+      else if (name === 'workflows') await loadWorkflows();
+    }
+
+    // 시스템프롬프트
+    async function loadPrompts() {
+      const list = await API('/settings/prompts');
+      const el = document.getElementById('prompt-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">프롬프트 없음</div>'; return; }
+      el.innerHTML = list.map(p => `
     <div class="prompt-item">
       <div class="prompt-item-header">
         <div>
@@ -631,193 +1789,337 @@ async function loadPrompts() {
           ${p.is_default ? '<span class="badge final" style="margin-left:6px;">기본값</span>' : ''}
         </div>
         <div style="display:flex;gap:4px;">
-          <button class="btn-sm btn-edit" onclick="editPrompt(${JSON.stringify(p).replace(/"/g,'&quot;')})">편집</button>
+          <button class="btn-sm btn-edit" onclick="editPrompt(${JSON.stringify(p).replace(/"/g, '&quot;')})">편집</button>
           <button class="btn-sm btn-del" onclick="deletePrompt('${escapeHtml(p.name)}')">삭제</button>
         </div>
       </div>
-      <div class="prompt-item-desc">${escapeHtml(p.description||'')}</div>
-      <div class="prompt-item-content">${escapeHtml(p.content||'')}</div>
+      <div class="prompt-item-desc">${escapeHtml(p.description || '')}</div>
+      <div class="prompt-item-content">${escapeHtml(p.content || '')}</div>
     </div>`).join('');
-}
+    }
 
-function editPrompt(p) {
-  editingPromptName = p.name;
-  document.getElementById('pf-name').value = p.name;
-  document.getElementById('pf-name').disabled = true;
-  document.getElementById('pf-desc').value = p.description||'';
-  document.getElementById('pf-content').value = p.content||'';
-  document.getElementById('pf-default').checked = !!p.is_default;
-  document.getElementById('prompt-form-title').textContent = '프롬프트 편집: ' + p.name;
-}
+    function editPrompt(p) {
+      editingPromptName = p.name;
+      document.getElementById('pf-name').value = p.name;
+      document.getElementById('pf-name').disabled = true;
+      document.getElementById('pf-desc').value = p.description || '';
+      document.getElementById('pf-content').value = p.content || '';
+      document.getElementById('pf-default').checked = !!p.is_default;
+      document.getElementById('prompt-form-title').textContent = '프롬프트 편집: ' + p.name;
+    }
 
-function clearPromptForm() {
-  editingPromptName = null;
-  document.getElementById('pf-name').value = '';
-  document.getElementById('pf-name').disabled = false;
-  document.getElementById('pf-desc').value = '';
-  document.getElementById('pf-content').value = '';
-  document.getElementById('pf-default').checked = false;
-  document.getElementById('prompt-form-title').textContent = '새 프롬프트 추가';
-}
+    function clearPromptForm() {
+      editingPromptName = null;
+      document.getElementById('pf-name').value = '';
+      document.getElementById('pf-name').disabled = false;
+      document.getElementById('pf-desc').value = '';
+      document.getElementById('pf-content').value = '';
+      document.getElementById('pf-default').checked = false;
+      document.getElementById('prompt-form-title').textContent = '새 프롬프트 추가';
+    }
 
-async function savePrompt() {
-  const name = document.getElementById('pf-name').value.trim();
-  const content = document.getElementById('pf-content').value.trim();
-  if (!name || !content) { alert('이름과 내용은 필수입니다.'); return; }
-  const body = {
-    name, content,
-    description: document.getElementById('pf-desc').value,
-    is_default: document.getElementById('pf-default').checked
-  };
-  if (editingPromptName) {
-    await API('/settings/prompts/' + encodeURIComponent(editingPromptName), {method:'PUT', body: JSON.stringify(body)});
-  } else {
-    await API('/settings/prompts', {method:'POST', body: JSON.stringify(body)});
-  }
-  clearPromptForm();
-  await loadPrompts();
-}
+    async function savePrompt() {
+      const name = document.getElementById('pf-name').value.trim();
+      const content = document.getElementById('pf-content').value.trim();
+      if (!name || !content) { alert('이름과 내용은 필수입니다.'); return; }
+      const body = {
+        name, content,
+        description: document.getElementById('pf-desc').value,
+        is_default: document.getElementById('pf-default').checked
+      };
+      if (editingPromptName) {
+        await API('/settings/prompts/' + encodeURIComponent(editingPromptName), { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await API('/settings/prompts', { method: 'POST', body: JSON.stringify(body) });
+      }
+      clearPromptForm();
+      await loadPrompts();
+    }
 
-async function deletePrompt(name) {
-  if (!confirm(`프롬프트 "${name}"을 삭제하시겠습니까?`)) return;
-  await API('/settings/prompts/' + encodeURIComponent(name), {method:'DELETE'});
-  await loadPrompts();
-}
+    async function deletePrompt(name) {
+      if (!confirm(`프롬프트 "${name}"을 삭제하시겠습니까?`)) return;
+      await API('/settings/prompts/' + encodeURIComponent(name), { method: 'DELETE' });
+      await loadPrompts();
+    }
 
-// 페르소나
-async function loadPersonas() {
-  const list = await API('/settings/personas');
-  const el = document.getElementById('persona-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">페르소나 없음</div>'; return; }
-  el.innerHTML = list.map(p => `
+    // 페르소나
+    async function loadPersonas() {
+      const list = await API('/settings/personas');
+      const el = document.getElementById('persona-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">페르소나 없음</div>'; return; }
+      el.innerHTML = list.map(p => `
     <div class="prompt-item">
       <div class="prompt-item-header">
         <div>
-          <span class="prompt-item-name">${escapeHtml(p.display_name||p.name)}</span>
+          <span class="prompt-item-name">${escapeHtml(p.display_name || p.name)}</span>
           <span style="color:#555;font-size:11px;margin-left:6px;">${escapeHtml(p.name)}</span>
           ${p.is_default ? '<span class="badge final" style="margin-left:6px;">기본값</span>' : ''}
         </div>
         <div style="display:flex;gap:4px;">
-          <button class="btn-sm btn-edit" onclick="editPersona(${JSON.stringify(p).replace(/"/g,'&quot;')})">편집</button>
+          <button class="btn-sm btn-edit" onclick="editPersona(${JSON.stringify(p).replace(/"/g, '&quot;')})">편집</button>
           <button class="btn-sm btn-del" onclick="deletePersona('${escapeHtml(p.name)}')">삭제</button>
         </div>
       </div>
-      <div class="prompt-item-desc">${escapeHtml(p.description||'')}</div>
+      <div class="prompt-item-desc">${escapeHtml(p.description || '')}</div>
       <div style="font-size:11px;color:#555;margin-top:4px;">
-        키워드: ${(p.keywords||[]).map(k=>`<span class="kw-tag">${escapeHtml(k)}</span>`).join('') || '없음'}
+        키워드: ${(p.keywords || []).map(k => `<span class="kw-tag">${escapeHtml(k)}</span>`).join('') || '없음'}
       </div>
     </div>`).join('');
-}
+    }
 
-function editPersona(p) {
-  editingPersonaName = p.name;
-  document.getElementById('persona-name').value = p.name;
-  document.getElementById('persona-name').disabled = true;
-  document.getElementById('persona-display').value = p.display_name||'';
-  document.getElementById('persona-desc').value = p.description||'';
-  document.getElementById('persona-prompt').value = p.system_prompt||'';
-  document.getElementById('persona-skills').value = (p.allowed_skills||[]).join(',');
-  document.getElementById('persona-kws').value = (p.keywords||[]).join(',');
-  document.getElementById('persona-default').checked = !!p.is_default;
-  document.getElementById('persona-form-title').textContent = '페르소나 편집: ' + p.name;
-}
+    function editPersona(p) {
+      editingPersonaName = p.name;
+      document.getElementById('persona-name').value = p.name;
+      document.getElementById('persona-name').disabled = true;
+      document.getElementById('persona-display').value = p.display_name || '';
+      document.getElementById('persona-desc').value = p.description || '';
+      document.getElementById('persona-prompt').value = p.system_prompt || '';
+      document.getElementById('persona-skills').value = (p.allowed_skills || []).join(',');
+      document.getElementById('persona-kws').value = (p.keywords || []).join(',');
+      document.getElementById('persona-default').checked = !!p.is_default;
+      document.getElementById('persona-form-title').textContent = '페르소나 편집: ' + p.name;
+    }
 
-function clearPersonaForm() {
-  editingPersonaName = null;
-  ['persona-name','persona-display','persona-desc','persona-prompt','persona-skills','persona-kws'].forEach(id => {
-    const el = document.getElementById(id);
-    el.value = '';
-    el.disabled = false;
-  });
-  document.getElementById('persona-default').checked = false;
-  document.getElementById('persona-form-title').textContent = '새 페르소나 추가';
-}
+    function clearPersonaForm() {
+      editingPersonaName = null;
+      ['persona-name', 'persona-display', 'persona-desc', 'persona-prompt', 'persona-skills', 'persona-kws'].forEach(id => {
+        const el = document.getElementById(id);
+        el.value = '';
+        el.disabled = false;
+      });
+      document.getElementById('persona-default').checked = false;
+      document.getElementById('persona-form-title').textContent = '새 페르소나 추가';
+    }
 
-async function savePersona() {
-  const name = document.getElementById('persona-name').value.trim();
-  const prompt = document.getElementById('persona-prompt').value.trim();
-  if (!name || !prompt) { alert('이름과 시스템 프롬프트는 필수입니다.'); return; }
-  const skillsStr = document.getElementById('persona-skills').value;
-  const kwsStr = document.getElementById('persona-kws').value;
-  const body = {
-    name,
-    system_prompt: prompt,
-    display_name: document.getElementById('persona-display').value,
-    description: document.getElementById('persona-desc').value,
-    allowed_skills: skillsStr ? skillsStr.split(',').map(s=>s.trim()).filter(Boolean) : [],
-    keywords: kwsStr ? kwsStr.split(',').map(s=>s.trim()).filter(Boolean) : [],
-    is_default: document.getElementById('persona-default').checked
-  };
-  if (editingPersonaName) {
-    await API('/settings/personas/' + encodeURIComponent(editingPersonaName), {method:'PUT', body: JSON.stringify(body)});
-  } else {
-    await API('/settings/personas', {method:'POST', body: JSON.stringify(body)});
-  }
-  clearPersonaForm();
-  await loadPersonas();
-}
+    async function savePersona() {
+      const name = document.getElementById('persona-name').value.trim();
+      const prompt = document.getElementById('persona-prompt').value.trim();
+      if (!name || !prompt) { alert('이름과 시스템 프롬프트는 필수입니다.'); return; }
+      const skillsStr = document.getElementById('persona-skills').value;
+      const kwsStr = document.getElementById('persona-kws').value;
+      const body = {
+        name,
+        system_prompt: prompt,
+        display_name: document.getElementById('persona-display').value,
+        description: document.getElementById('persona-desc').value,
+        allowed_skills: skillsStr ? skillsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+        keywords: kwsStr ? kwsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+        is_default: document.getElementById('persona-default').checked
+      };
+      if (editingPersonaName) {
+        await API('/settings/personas/' + encodeURIComponent(editingPersonaName), { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await API('/settings/personas', { method: 'POST', body: JSON.stringify(body) });
+      }
+      clearPersonaForm();
+      await loadPersonas();
+    }
 
-async function deletePersona(name) {
-  if (!confirm(`페르소나 "${name}"을 삭제하시겠습니까?`)) return;
-  await API('/settings/personas/' + encodeURIComponent(name), {method:'DELETE'});
-  await loadPersonas();
-}
+    async function deletePersona(name) {
+      if (!confirm(`페르소나 "${name}"을 삭제하시겠습니까?`)) return;
+      await API('/settings/personas/' + encodeURIComponent(name), { method: 'DELETE' });
+      await loadPersonas();
+    }
 
-// 스킬
-async function loadSkills() {
-  const list = await API('/settings/skills');
-  const el = document.getElementById('skill-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">스킬 없음</div>'; return; }
-  el.innerHTML = list.map(s => `
+    // 스킬
+    async function loadSkills() {
+      const list = await API('/settings/skills');
+      const el = document.getElementById('skill-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">스킬 없음</div>'; return; }
+      el.innerHTML = list.map(s => `
     <div class="skill-item">
       <div class="skill-info">
         <div class="skill-name">${escapeHtml(s.name)}</div>
-        <div class="skill-desc">${escapeHtml(s.description||'')}</div>
+        <div class="skill-desc">${escapeHtml(s.description || '')}</div>
       </div>
       <label class="toggle">
-        <input type="checkbox" ${s.is_active?'checked':''} onchange="toggleSkill('${escapeHtml(s.name)}', this.checked)">
+        <input type="checkbox" ${s.is_active ? 'checked' : ''} onchange="toggleSkill('${escapeHtml(s.name)}', this.checked)">
         <span class="toggle-slider"></span>
       </label>
     </div>`).join('');
-}
+    }
 
-async function toggleSkill(name, active) {
-  await API('/settings/skills/' + encodeURIComponent(name) + '/toggle', {
-    method:'POST', body: JSON.stringify({active})
-  });
-}
+    async function toggleSkill(name, active) {
+      await API('/settings/skills/' + encodeURIComponent(name) + '/toggle', {
+        method: 'POST', body: JSON.stringify({ active })
+      });
+    }
 
-// 매크로
-async function loadMacros() {
-  const list = await API('/settings/macros');
-  const el = document.getElementById('macro-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">매크로 없음</div>'; return; }
-  el.innerHTML = list.map(m => `
-    <div class="prompt-item">
-      <div class="prompt-item-name">${escapeHtml(m.name)}</div>
-      <div class="prompt-item-desc">${escapeHtml(m.description||'')}</div>
-      <div style="font-size:11px;color:#555;margin-top:4px;">변수: ${(m.variables||[]).join(', ')||'없음'}</div>
-      <pre class="code-view" style="margin-top:8px;">${escapeHtml(m.template||'')}</pre>
-    </div>`).join('');
-}
+    // 매크로
+    async function loadMacros() {
+      const list = await API('/settings/macros');
+      const el = document.getElementById('macro-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">매크로 없음</div>'; return; }
+      el.innerHTML = '';
+      for (const m of list) {
+        const div = document.createElement('div');
+        div.className = 'prompt-item';
+        const hdr = document.createElement('div');
+        hdr.className = 'prompt-item-header';
+        const nameSpan = document.createElement('div');
+        const n = document.createElement('span');
+        n.className = 'prompt-item-name';
+        n.textContent = m.name;
+        nameSpan.appendChild(n);
+        const btns = document.createElement('div');
+        btns.style.display = 'flex';
+        btns.style.gap = '4px';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-sm btn-edit';
+        editBtn.textContent = '✎수정';
+        editBtn.onclick = () => openMacroModal(m);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-sm btn-del';
+        delBtn.textContent = '🗑삭제';
+        delBtn.onclick = () => deleteMacro(m.name);
+        btns.appendChild(editBtn);
+        btns.appendChild(delBtn);
+        hdr.appendChild(nameSpan);
+        hdr.appendChild(btns);
+        const desc = document.createElement('div');
+        desc.className = 'prompt-item-desc';
+        desc.textContent = m.description || '';
+        const vars = document.createElement('div');
+        vars.style.cssText = 'font-size:11px;color:#555;margin-top:4px;';
+        vars.textContent = '변수: ' + ((m.variables || []).join(', ') || '없음');
+        const pre = document.createElement('pre');
+        pre.className = 'code-view';
+        pre.style.marginTop = '8px';
+        pre.textContent = m.template || '';
+        div.appendChild(hdr);
+        div.appendChild(desc);
+        div.appendChild(vars);
+        div.appendChild(pre);
+        el.appendChild(div);
+      }
+    }
 
-// 워크플로우
-async function loadWorkflows() {
-  const list = await API('/settings/workflows');
-  const el = document.getElementById('workflow-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-state">워크플로우 없음</div>'; return; }
-  el.innerHTML = list.map(w => `
-    <div class="prompt-item">
-      <div class="prompt-item-name">${escapeHtml(w.name)}</div>
-      <div class="prompt-item-desc">${escapeHtml(w.description||'')}</div>
-      <div style="font-size:11px;color:#555;margin-top:4px;">단계 수: ${(w.steps||[]).length}</div>
-    </div>`).join('');
-}
+    function openMacroModal(m) {
+      editingMacroName = m ? m.name : null;
+      document.getElementById('macro-modal-title').textContent = m ? '매크로 편집: ' + m.name : '매크로 추가';
+      document.getElementById('mf-name').value = m ? m.name : '';
+      document.getElementById('mf-name').disabled = !!m;
+      document.getElementById('mf-desc').value = m ? (m.description || '') : '';
+      document.getElementById('mf-template').value = m ? (m.template || '') : '';
+      updateMacroVars(m ? (m.variables || []) : []);
+      document.getElementById('macro-modal').classList.add('open');
+    }
 
-// ═══ 초기화 ═══
-(async function init() {
-  await loadConvoList();
-})();
-</script>
+    function updateMacroVars(vars) {
+      const el = document.getElementById('mf-vars');
+      el.textContent = vars.length ? vars.join(', ') : '(없음)';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const tpl = document.getElementById('mf-template');
+      if (tpl) tpl.addEventListener('input', () => {
+        const matches = [...tpl.value.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]);
+        const unique = [...new Set(matches)];
+        updateMacroVars(unique);
+      });
+    });
+
+    async function saveMacro() {
+      const name = document.getElementById('mf-name').value.trim();
+      const template = document.getElementById('mf-template').value.trim();
+      if (!name || !template) { alert('이름과 템플릿은 필수입니다.'); return; }
+      const body = { name, template, description: document.getElementById('mf-desc').value };
+      if (editingMacroName) {
+        await API('/settings/macros/' + encodeURIComponent(editingMacroName), { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await API('/settings/macros', { method: 'POST', body: JSON.stringify(body) });
+      }
+      closeModal('macro-modal');
+      await loadMacros();
+    }
+
+    async function deleteMacro(name) {
+      if (!confirm('매크로 "' + name + '"을 삭제하시겠습니까?')) return;
+      await API('/settings/macros/' + encodeURIComponent(name), { method: 'DELETE' });
+      await loadMacros();
+    }
+
+    // 워크플로우
+    async function loadWorkflows() {
+      const list = await API('/settings/workflows');
+      const el = document.getElementById('workflow-list');
+      if (!list.length) { el.innerHTML = '<div class="empty-state">워크플로우 없음</div>'; return; }
+      el.innerHTML = '';
+      for (const w of list) {
+        const div = document.createElement('div');
+        div.className = 'prompt-item';
+        const hdr = document.createElement('div');
+        hdr.className = 'prompt-item-header';
+        const nameSpan = document.createElement('div');
+        const n = document.createElement('span');
+        n.className = 'prompt-item-name';
+        n.textContent = w.name;
+        nameSpan.appendChild(n);
+        const btns = document.createElement('div');
+        btns.style.display = 'flex';
+        btns.style.gap = '4px';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-sm btn-edit';
+        editBtn.textContent = '✎수정';
+        editBtn.onclick = () => openWorkflowModal(w);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-sm btn-del';
+        delBtn.textContent = '🗑삭제';
+        delBtn.onclick = () => deleteWorkflow(w.name);
+        btns.appendChild(editBtn);
+        btns.appendChild(delBtn);
+        hdr.appendChild(nameSpan);
+        hdr.appendChild(btns);
+        const desc = document.createElement('div');
+        desc.className = 'prompt-item-desc';
+        desc.textContent = w.description || '';
+        const steps = document.createElement('div');
+        steps.style.cssText = 'font-size:11px;color:#555;margin-top:4px;';
+        steps.textContent = '단계 수: ' + (w.steps || []).length;
+        div.appendChild(hdr);
+        div.appendChild(desc);
+        div.appendChild(steps);
+        el.appendChild(div);
+      }
+    }
+
+    function openWorkflowModal(w) {
+      editingWorkflowName = w ? w.name : null;
+      document.getElementById('wf-modal-title').textContent = w ? '워크플로우 편집: ' + w.name : '워크플로우 추가';
+      document.getElementById('wff-name').value = w ? w.name : '';
+      document.getElementById('wff-name').disabled = !!w;
+      document.getElementById('wff-desc').value = w ? (w.description || '') : '';
+      document.getElementById('wff-steps').value = w ? JSON.stringify(w.steps || [], null, 2) : '';
+      document.getElementById('workflow-modal').classList.add('open');
+    }
+
+    async function saveWorkflow() {
+      const name = document.getElementById('wff-name').value.trim();
+      const stepsStr = document.getElementById('wff-steps').value.trim();
+      if (!name) { alert('이름은 필수입니다.'); return; }
+      let steps;
+      try { steps = stepsStr ? JSON.parse(stepsStr) : []; } catch { alert('단계가 유효한 JSON이 아닙니다.'); return; }
+      const body = { name, steps, description: document.getElementById('wff-desc').value };
+      if (editingWorkflowName) {
+        await API('/settings/workflows/' + encodeURIComponent(editingWorkflowName), { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await API('/settings/workflows', { method: 'POST', body: JSON.stringify(body) });
+      }
+      closeModal('workflow-modal');
+      await loadWorkflows();
+    }
+
+    async function deleteWorkflow(name) {
+      if (!confirm('워크플로우 "' + name + '"을 삭제하시겠습니까?')) return;
+      await API('/settings/workflows/' + encodeURIComponent(name), { method: 'DELETE' });
+      await loadWorkflows();
+    }
+
+    // ═══ 초기화 ═══
+    (async function init() {
+      await loadConvoList();
+    })();
+  </script>
 </body>
+
 </html>

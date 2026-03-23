@@ -24,16 +24,6 @@ _PRICING: Dict[str, Tuple[float, float]] = {
     "gemini-2.5-pro":                     (1.25,  10.00),
     "gemini-2.5-flash":                   (0.15,   0.60),
     "gemini-3.1-pro-preview":             (1.25,  10.00),
-    # models/ prefix variants
-    "models/gemini-2.0-flash":            (0.10,   0.40),
-    "models/gemini-2.0-flash-001":        (0.10,   0.40),
-    "models/gemini-2.0-flash-lite":       (0.075,  0.30),
-    "models/gemini-2.0-flash-lite-001":   (0.075,  0.30),
-    "models/gemini-1.5-flash":            (0.075,  0.30),
-    "models/gemini-1.5-pro":              (1.25,   5.00),
-    "models/gemini-2.5-pro":              (1.25,  10.00),
-    "models/gemini-2.5-flash":            (0.15,   0.60),
-    "models/gemini-3.1-pro-preview":      (1.25,  10.00),
     # Claude
     "claude-opus-4-6":                    (15.0,  75.0),
     "claude-sonnet-4-6":                  (3.0,   15.0),
@@ -46,14 +36,13 @@ _PRICING: Dict[str, Tuple[float, float]] = {
 
 def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """모델명 + 토큰 수로 USD 비용을 계산합니다. 미등록 모델은 0.0 반환."""
-    pricing = _PRICING.get(model)
+    key = model.removeprefix("models/")
+    pricing = _PRICING.get(key)
     if not pricing:
-        # 부분 매칭 (prefix 포함 모델명 등 대응)
-        ml = model.lower()
-        for key, price in _PRICING.items():
-            kl = key.lower()
-            if kl in ml or ml in kl:
-                pricing = price
+        kl = key.lower()
+        for k, v in _PRICING.items():
+            if k.lower() in kl or kl in k.lower():
+                pricing = v
                 break
     if not pricing:
         return 0.0

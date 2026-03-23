@@ -5,10 +5,21 @@
 
 import logging
 import traceback as _traceback
-from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from .constants import utcnow
 from .graph_manager import DB_PATH, get_db
+
+
+_ISSUE_COLS = (
+    "id, title, error_type, error_message, traceback, "
+    "context, source, severity, status, created_at, resolved_at, resolution_note"
+)
+_ISSUE_KEYS = [
+    "id", "title", "error_type", "error_message", "traceback",
+    "context", "source", "severity", "status",
+    "created_at", "resolved_at", "resolution_note",
+]
 
 
 # ── DB 초기화 ──────────────────────────────────────────────────────
@@ -50,7 +61,7 @@ def capture(
     try:
         if not title:
             title = f"[{error_type}] {error_message[:80]}"
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        now = utcnow()
         with get_db(db_path) as conn:
             cur = conn.execute(
                 """
@@ -109,9 +120,7 @@ def list_issues(
         with get_db(db_path) as conn:
             rows = conn.execute(
                 f"""
-                SELECT id, title, error_type, error_message, traceback,
-                       context, source, severity, status,
-                       created_at, resolved_at, resolution_note
+                SELECT {_ISSUE_COLS}
                 FROM issues
                 {where}
                 ORDER BY created_at DESC
@@ -119,10 +128,7 @@ def list_issues(
                 """,
                 params,
             ).fetchall()
-        keys = ["id", "title", "error_type", "error_message", "traceback",
-                "context", "source", "severity", "status",
-                "created_at", "resolved_at", "resolution_note"]
-        return [dict(zip(keys, row)) for row in rows]
+        return [dict(zip(_ISSUE_KEYS, row)) for row in rows]
     except Exception as e:
         logging.warning(f"issue_tracker.list_issues 실패: {e}")
         return []
@@ -133,20 +139,12 @@ def get_issue(issue_id: int, db_path=DB_PATH) -> Optional[Dict]:
     try:
         with get_db(db_path) as conn:
             row = conn.execute(
-                """
-                SELECT id, title, error_type, error_message, traceback,
-                       context, source, severity, status,
-                       created_at, resolved_at, resolution_note
-                FROM issues WHERE id = ?
-                """,
+                f"SELECT {_ISSUE_COLS} FROM issues WHERE id = ?",
                 (issue_id,),
             ).fetchone()
         if row is None:
             return None
-        keys = ["id", "title", "error_type", "error_message", "traceback",
-                "context", "source", "severity", "status",
-                "created_at", "resolved_at", "resolution_note"]
-        return dict(zip(keys, row))
+        return dict(zip(_ISSUE_KEYS, row))
     except Exception as e:
         logging.warning(f"issue_tracker.get_issue 실패: {e}")
         return None
@@ -160,7 +158,7 @@ def update_status(
 ) -> bool:
     """이슈 상태를 갱신합니다. 성공 시 True 반환."""
     try:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        now = utcnow()
         resolved_at = now if status in ("resolved", "ignored") else None
         with get_db(db_path) as conn:
             cur = conn.execute(

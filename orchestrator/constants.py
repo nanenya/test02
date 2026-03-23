@@ -60,3 +60,52 @@ PLAN_VALIDATION_MIN_SCORE: float = 0.6
 
 # 누적 지식 최대 항목 수 (대화당) [B]
 WISDOM_MAX_ENTRIES: int = 50
+
+# decide_and_act history 슬라이스 크기
+RECENT_HISTORY_ITEMS: Final[int] = 6
+
+# LLM 프롬프트에 전달하는 도구 목록 최대 개수
+MAX_TOOLS_IN_PROMPT: Final[int] = 30
+
+# summarize_history 히스토리 발췌 최대 문자
+HISTORY_EXCERPT_MAX_CHARS: Final[int] = 8000
+
+# API 서버 자동 히스토리 요약 임계값
+HISTORY_AUTO_SUMMARIZE_THRESHOLD: int = 40   # 이 이상이면 자동 요약
+HISTORY_KEEP_RECENT: int = 10                # 요약 후 최신 N개 보존
+HISTORY_SUMMARY_MARKER: str = "[이전 대화 요약]"  # 중복 요약 방지 마커
+
+# extract_wisdom 결과 슬라이스 크기
+RESULT_HISTORY_ITEMS: Final[int] = 20
+
+# api.py 매직 문자열
+USER_REQUEST_PREFIX: Final[str] = "사용자 요청:"
+TOOL_RESULT_TRUNCATED_SUFFIX: Final[str] = "... (결과가 너무 길어 잘림)"
+
+# llm_client.py 매직 숫자
+_DAY_SECONDS: Final[int] = 24 * 3600
+_GEMINI_RATE_LIMIT_SECONDS: Final[int] = 60
+
+
+def truncate_history(history: list, max_chars: int = HISTORY_MAX_CHARS) -> str:
+    """최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation.
+
+    gemini_client / claude_client / ollama_client 공유용.
+    뒤(최신)부터 역순으로 항목을 추가하되, max_chars를 초과하면 중단합니다.
+    """
+    if not history:
+        return ""
+    # 비문자열 항목은 str()로 변환 (None, dict 등 방어)
+    history = [item if isinstance(item, str) else str(item) for item in history]
+    selected = []
+    total = 0
+    for item in reversed(history):
+        item_len = len(item)
+        if total + item_len > max_chars and selected:
+            break
+        selected.append(item)
+        total += item_len
+    selected.reverse()
+    if len(selected) < len(history):
+        return "... (이전 기록 생략) ...\n" + "\n".join(selected)
+    return "\n".join(selected)

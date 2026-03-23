@@ -153,7 +153,7 @@ async def generate_tool_implementation(
     성공 시 func_id(mcp_functions.id)를 반환합니다.
     보안 검사 실패 또는 LLM 오류 시 None을 반환합니다.
     """
-    from .llm_client import _get_fallback_chain, _get_client_module
+    from .llm_client import _get_fallback_chain, _get_client_module, _is_tripped, _detect_circuit_trip, _trip
 
     prompt = _acm.render_prompt(
         "tool_implementation_user",
@@ -163,6 +163,10 @@ async def generate_tool_implementation(
 
     chain = _get_fallback_chain()
     for provider in chain:
+        tripped, trip_reason = _is_tripped(provider)
+        if tripped:
+            logger.info(f"[CircuitBreaker] ⏭ {provider} 스킵 (tool_impl_gen): {trip_reason}")
+            continue
         try:
             module = _get_client_module(provider)
             raw = await module.generate_final_answer(
@@ -184,7 +188,7 @@ async def generate_tool_implementation(
                 )
                 return None
 
-            # mcp_db_manager에 저장 (비활성 상태로 저장, 사용자 검토 후 활성화)
+            # mcp_db_manager에 저장 (is_active=1로 즉시 활성화)
             func_id = mcp_db_manager.add_function(
                 func_name=tool_hint,
                 module_group=module_group,
@@ -193,6 +197,21 @@ async def generate_tool_implementation(
                 source_type="auto_generated",
                 source_desc=f"LLM 자동 생성 (provider={provider})",
             )
+
+            # 현재 세션 TOOLS에 즉시 주입 (load_module_in_memory 재사용)
+            try:
+                loaded = mcp_db_manager.load_module_in_memory(module_group)
+                fn = loaded.get(tool_hint)
+                if callable(fn):
+                    tool_registry.TOOLS[tool_hint] = fn
+                    tool_registry.TOOL_DESCRIPTIONS[tool_hint] = (
+                        fn.__doc__.strip() if fn.__doc__ else f"자동 생성: {context or tool_hint}"
+                    )
+                    logger.info(f"[Discoverer] TOOLS에 즉시 주입: {tool_hint}")
+                else:
+                    logger.warning(f"[Discoverer] 생성 코드에서 '{tool_hint}' 함수를 찾을 수 없음")
+            except Exception as inject_err:
+                logger.warning(f"[Discoverer] TOOLS 주입 실패: {inject_err}")
 
             pipeline_db.log_tool_gap(
                 required_tool=tool_hint,
@@ -204,6 +223,10 @@ async def generate_tool_implementation(
             return func_id
 
         except Exception as e:
+            trip = _detect_circuit_trip(e, provider)
+            if trip:
+                duration, reason = trip
+                _trip(provider, duration, reason)
             logger.warning(f"[Discoverer] 도구 생성 실패 provider={provider}: {e}")
 
     return None

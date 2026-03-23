@@ -7,10 +7,17 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
-from .tool_registry import get_filtered_tool_descriptions
 from .models import ExecutionGroup
 from .constants import HISTORY_MAX_CHARS
 from . import agent_config_manager as _acm
+from ._llm_utils import (
+    _extract_json_block,
+    generate_execution_plan_with_caller,
+    generate_final_answer_with_caller,
+    extract_keywords_with_caller,
+    detect_topic_split_with_caller,
+    generate_title_with_caller,
+)
 from typing import Dict, Any, List, Literal, Optional
 
 load_dotenv()
@@ -23,32 +30,6 @@ HIGH_PERF_MODEL_NAME = os.getenv("CLAUDE_HIGH_PERF_MODEL", "claude-sonnet-4-6")
 STANDARD_MODEL_NAME = os.getenv("CLAUDE_STANDARD_MODEL", "claude-haiku-4-5-20251001")
 
 ModelPreference = Literal["auto", "standard", "high"]
-
-DEFAULT_HISTORY_MAX_CHARS = HISTORY_MAX_CHARS  # constants.py에서 중앙 관리
-
-
-def _truncate_history(history: list, max_chars: int = DEFAULT_HISTORY_MAX_CHARS) -> str:
-    """최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation.
-
-    뒤(최신)부터 역순으로 항목을 추가하되, max_chars를 초과하면 중단합니다.
-    """
-    if not history:
-        return ""
-
-    selected = []
-    total = 0
-    for item in reversed(history):
-        item_len = len(item)
-        if total + item_len > max_chars and selected:
-            break
-        selected.append(item)
-        total += item_len
-
-    selected.reverse()
-
-    if len(selected) < len(history):
-        return "... (이전 기록 생략) ...\n" + "\n".join(selected)
-    return "\n".join(selected)
 
 
 def _get_model_name(
@@ -75,12 +56,17 @@ async def _call_claude(
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY가 설정되지 않았습니다. .env 파일에 ANTHROPIC_API_KEY를 설정해주세요.")
 
+    if not user or not user.strip():
+        raise ValueError("Claude API 호출 실패: user 메시지가 비어 있습니다.")
+
     payload: Dict[str, Any] = {
         "model": model,
         "max_tokens": 4096,
-        "system": system,
         "messages": [{"role": "user", "content": user}],
     }
+    # system이 빈 문자열이면 Anthropic API가 400을 반환하므로 제외
+    if system and system.strip():
+        payload["system"] = system
 
     headers = {
         "x-api-key": api_key,
@@ -94,10 +80,13 @@ async def _call_claude(
             headers=headers,
             json=payload,
         )
+        if resp.status_code >= 400:
+            logging.error(
+                f"Claude API 오류 [{resp.status_code}] model={model}: {resp.text}"
+            )
         resp.raise_for_status()
         data = resp.json()
 
-    # 토큰 사용량 기록
     try:
         from . import token_tracker
         _usage = data.get("usage", {})
@@ -136,155 +125,54 @@ async def generate_execution_plan(
     system_prompts: List[str] = None,
     allowed_skills: Optional[List[str]] = None,
 ) -> List[ExecutionGroup]:
-    """
-    ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
+    """ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다.
     목표가 완료되면 빈 리스트 []를 반환합니다.
     """
     model_name = _get_model_name(model_preference, default_type="high")
-    tool_descriptions = get_filtered_tool_descriptions(allowed_skills)
-    formatted_history = _truncate_history(history)
-    custom_system_prompt = "\n".join(system_prompts) if system_prompts else "당신은 유능한 AI 어시스턴트입니다."
-    system = custom_system_prompt + "\n\n" + _acm.get_prompt("react_planner_system")
-
-    user = _acm.render_prompt(
-        "react_planner_instruction",
-        user_query=user_query,
-        requirements_content=requirements_content if requirements_content else "없음",
-        tool_descriptions=tool_descriptions,
-        formatted_history=formatted_history,
+    return await generate_execution_plan_with_caller(
+        _call_claude, user_query, requirements_content, history,
+        model_name, system_prompts, allowed_skills,
     )
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
-
-        # JSON 블록 추출 (```json ... ``` 감싸진 경우 처리)
-        if "```" in text:
-            import re
-            match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-            if match:
-                text = match.group(1).strip()
-
-        parsed_json = json.loads(text)
-
-        if not isinstance(parsed_json, list):
-            raise ValueError("응답이 리스트 형식이 아닙니다.")
-
-        if not parsed_json:
-            return []
-
-        plan = [ExecutionGroup(**group) for group in parsed_json]
-        return plan[:1]
-
-    except (json.JSONDecodeError, TypeError, ValueError) as e:
-        print(f"JSON 파싱 오류: {e}\n받은 응답: {text}")
-        raise ValueError(f"Planner 모델이 유효한 JSON 계획을 생성하지 못했습니다: {e}")
-    except Exception as e:
-        print(f"Planner 모델 호출 오류: {e}")
-        raise e
 
 
 async def generate_final_answer(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
     model_name = _get_model_name(model_preference, default_type="standard")
-    system = _acm.get_prompt("final_answer_system")
-    history_str = _truncate_history(history)
-    user = _acm.render_prompt("final_answer_user", history_str=history_str)
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)
-        return text.strip()
-    except Exception as e:
-        logging.error(f"Executor (generate_final_answer) 오류: {e}", exc_info=True)
-        last_result = next((item for item in reversed(history) if item.startswith("  - 실행 결과:")), None)
-        if last_result:
-            return f"최종 요약 생성에 실패했습니다 (서버 로그 참조). 마지막 실행 결과입니다:\n{last_result}"
-        else:
-            return "작업이 완료되었지만, 최종 답변을 생성하는 데 실패했습니다. 서버 로그를 확인해주세요."
+    return await generate_final_answer_with_caller(_call_claude, history, model_name)
 
 
 async def extract_keywords(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> List[str]:
-    """Claude로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함)."""
+    """Claude로 키워드 5~10개 추출. 실패 시 [] 반환."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return []
-
-    model_name = _get_model_name(model_preference, default_type="standard")
-    system = _acm.get_prompt("extract_keywords_system")
-    history_str = _truncate_history(history)
-    user = _acm.render_prompt("extract_keywords_user", history_str=history_str)
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
-        if "```" in text:
-            import re
-            match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-            if match:
-                text = match.group(1).strip()
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return [str(k) for k in parsed if isinstance(k, str)]
-        return []
-    except Exception as e:
-        logging.warning(f"키워드 추출 실패: {e}")
-        return []
+    return await extract_keywords_with_caller(
+        _call_claude, history, _get_model_name(model_preference, default_type="standard")
+    )
 
 
 async def detect_topic_split(
     history: list,
     model_preference: ModelPreference = "auto",
 ) -> Optional[Dict[str, Any]]:
-    """Claude로 주제 전환 지점 감지. 실패 시 None 반환.
-    반환: {"detected": bool, "split_index": int, "reason": str,
-           "topic_a": str, "topic_b": str}"""
+    """Claude로 주제 전환 지점 감지. 실패 시 None 반환."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return None
-
-    model_name = _get_model_name(model_preference, default_type="standard")
-    system = _acm.get_prompt("detect_topic_split_system")
-    history_str = _truncate_history(history)
-    user = _acm.render_prompt("detect_topic_split_user", history_str=history_str)
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=True)
-        if "```" in text:
-            import re
-            match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-            if match:
-                text = match.group(1).strip()
-        parsed = json.loads(text)
-        if isinstance(parsed, dict) and "detected" in parsed:
-            return parsed
-        return None
-    except Exception as e:
-        logging.warning(f"주제 분리 감지 실패: {e}")
-        return None
+    return await detect_topic_split_with_caller(
+        _call_claude, history, _get_model_name(model_preference, default_type="standard")
+    )
 
 
 async def generate_title_for_conversation(
     history: list,
-    model_preference: ModelPreference = "auto"
+    model_preference: ModelPreference = "auto",
 ) -> str:
     if not os.getenv("ANTHROPIC_API_KEY"):
         return "Untitled_Conversation"
-
-    model_name = _get_model_name(model_preference, default_type="standard")
-
-    if len(history) < 2:
-        return "새로운_대화"
-
-    system = _acm.get_prompt("generate_title_system")
-    user = _acm.render_prompt(
-        "generate_title_user",
-        msg0=history[0],
-        msg1=history[1] if len(history) > 1 else "",
+    return await generate_title_with_caller(
+        _call_claude, history, _get_model_name(model_preference, default_type="standard")
     )
-
-    try:
-        text = await _call_claude(system=system, user=user, model=model_name, json_mode=False)
-        return text.strip().replace("*", "").replace("`", "").replace('"', "")
-    except Exception:
-        return "Untitled_Conversation"

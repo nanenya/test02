@@ -19,6 +19,11 @@ from . import config
 TOOLS: Dict[str, Callable] = {}
 TOOL_DESCRIPTIONS: Dict[str, str] = {}
 
+
+def _resolve_tool_alias(name: str) -> str:
+    """TOOL_NAME_ALIASES에 별칭이 있으면 해석하여 반환합니다."""
+    return config.TOOL_NAME_ALIASES.get(name, name)
+
 # MCP 서버 세션 및 도구 저장소
 _exit_stack: Optional[AsyncExitStack] = None
 _mcp_sessions: Dict[str, ClientSession] = {}
@@ -185,7 +190,7 @@ async def ensure_tool_server_connected(tool_name: str) -> None:
     이미 연결된 도구이거나 로컬 도구이면 아무것도 하지 않습니다.
     """
     global _exit_stack
-    resolved_name = config.TOOL_NAME_ALIASES.get(tool_name, tool_name)
+    resolved_name = _resolve_tool_alias(tool_name)
 
     # 이미 연결된 경우 스킵
     if resolved_name in TOOLS or resolved_name in _mcp_tools:
@@ -226,7 +231,7 @@ def get_tool(name: str) -> Optional[Callable]:
         return TOOLS[name]
 
     # 2. 별칭 적용
-    resolved_name = config.TOOL_NAME_ALIASES.get(name, name)
+    resolved_name = _resolve_tool_alias(name)
 
     # 3. MCP 도구에서 검색
     if resolved_name in _mcp_tools:
@@ -261,13 +266,13 @@ def get_tool(name: str) -> Optional[Callable]:
 
 def get_tool_providers(name: str) -> List[dict]:
     """해당 도구를 제공하는 모든 서버 정보를 반환합니다."""
-    resolved_name = config.TOOL_NAME_ALIASES.get(name, name)
+    resolved_name = _resolve_tool_alias(name)
     return _tool_providers.get(resolved_name, [])
 
 
 def set_tool_preference(tool_name: str, server_name: str) -> bool:
     """특정 도구의 선호 서버를 설정합니다."""
-    resolved_name = config.TOOL_NAME_ALIASES.get(tool_name, tool_name)
+    resolved_name = _resolve_tool_alias(tool_name)
     providers = _tool_providers.get(resolved_name, [])
     if not any(p["server"] == server_name for p in providers):
         return False
@@ -299,3 +304,60 @@ def get_filtered_tool_descriptions(allowed_skills=None) -> Dict[str, str]:
     if not allowed_skills:
         return TOOL_DESCRIPTIONS
     return {k: v for k, v in TOOL_DESCRIPTIONS.items() if k in allowed_skills}
+
+
+def get_tool_load_status() -> dict:
+    """현재 로드된 도구의 실제 상태를 반환합니다.
+
+    Returns:
+        {
+            "local": {"loaded": [...], "failed": [...]},
+            "mcp": {"connected": {"server": [tool, ...]}, "on_demand": [...]},
+            "total": int,
+            "summary": str,
+        }
+    """
+    loaded_local = list(TOOLS.keys())
+    configured_local = list(config.LOCAL_MODULES)
+
+    # 설정엔 있지만 로드 안 된 모듈 탐색 (함수 이름으로 역추적 불가 → 모듈 단위로 추적)
+    # tool_registry에 모듈별 로드 기록이 없으므로, DB/파일 import 재시도로 탐지
+    failed_modules = []
+    for module_name in configured_local:
+        # DB에서 로드된 함수 중 이 모듈 소속인지 확인 (TOOLS에 존재하면 OK)
+        # 단순 휴리스틱: 모듈 이름을 prefix로 쓰는 함수가 있으면 로드 성공으로 간주
+        full_module = f"{config.MCP_DIRECTORY}.{module_name}"
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec(full_module)
+            if spec is None:
+                failed_modules.append(module_name)
+        except (ModuleNotFoundError, ValueError):
+            failed_modules.append(module_name)
+
+    # MCP 서버별 연결된 도구
+    mcp_by_server: Dict[str, List[str]] = {}
+    for tool_name, entry in _mcp_tools.items():
+        server = entry.get("server", "unknown")
+        mcp_by_server.setdefault(server, []).append(tool_name)
+
+    on_demand_servers = list(_on_demand_configs.keys())
+
+    total = len(TOOLS) + len(_mcp_tools)
+    summary = (
+        f"로컬 {len(TOOLS)}개 · MCP {len(_mcp_tools)}개 · "
+        f"온디맨드 {len(_on_demand_configs)}개 · 파일 없는 모듈 {len(failed_modules)}개"
+    )
+
+    return {
+        "local": {
+            "loaded": loaded_local,
+            "modules_missing_file": failed_modules,
+        },
+        "mcp": {
+            "connected": mcp_by_server,
+            "on_demand": on_demand_servers,
+        },
+        "total": total,
+        "summary": summary,
+    }

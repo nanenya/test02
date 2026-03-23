@@ -6,7 +6,7 @@
 ## 0. 요구사항 추적 (Requirements Tracker)
 
 > **이 섹션은 매 작업 요청 시 갱신됩니다.**
-> 마지막 갱신: 2026-03-01 (4층 파이프라인 Phase 1-4 구현 완료 + GitHub push)
+> 마지막 갱신: 2026-03-06 (2차 리팩터링 — cli/run 분리 + mcp_db 분리 + api 핸들러 분리 + pipeline_db 템플릿 분리)
 
 ### 0.1 완료된 요구사항 (Completed)
 
@@ -49,7 +49,15 @@
 
 ```
 test02/
-├── main.py                      # CLI 진입점 (Typer 앱)
+├── main.py                      # CLI 진입점 (thin assembler — sub-app 등록만)
+├── cli/                         # CLI 모듈 패키지 (main.py에서 분리)
+│   ├── __init__.py
+│   ├── core.py                  # 핵심 커맨드 (run/server/list/graph/migrate) + 공통 유틸
+│   ├── conv_cmds.py             # group / topic / keyword 서브커맨드
+│   ├── mcp_cmds.py              # mcp / mcp function 서브커맨드
+│   ├── model_cmds.py            # model 서브커맨드
+│   ├── agent_config_cmds.py     # prompt / skill / macro / workflow / persona 서브커맨드
+│   └── ops_cmds.py              # issue / test / template / gap / provider 서브커맨드
 ├── requirements.txt             # Python 의존성
 ├── start.sh                     # venv 활성화 스크립트
 ├── pytest.ini                   # pytest 설정
@@ -369,6 +377,7 @@ tool_registry._load_local_modules()
 | feedparser | RSS 피드 파싱 |
 | beautifulsoup4 | HTML 파싱 |
 | aiosqlite | 비동기 SQLite 지원 |
+| apscheduler | 비동기 작업 스케줄러 |
 | pytest-mock | 테스트용 모킹 |
 | pytest-asyncio | async 테스트 지원 |
 
@@ -448,115 +457,29 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 ## 11. 파일별 상세 카탈로그 (자동 생성)
 
-> 자동 생성 시각: 2026-03-03T18:13:29
-> Python 파일: 52개 | 함수: 495개 | 클래스: 111개 | 총 라인: 18744줄
+> 자동 생성 시각: 2026-03-06T22:00:54
+> Python 파일: 82개 | 함수: 576개 | 클래스: 134개 | 총 라인: 20949줄
 
 ### ./
 
 #### `OMO_COMPARISON.md` (361줄, 18,415B)
 
-#### `PROJECT_ANALYSIS.md` (2172줄, 126,131B)
+#### `PROJECT_ANALYSIS.md` (2583줄, 146,388B)
 
-#### `main.py` (2686줄, 117,327B)
+#### `main.py` (82줄, 2,395B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
-| `list_conversations_cmd` | `group: Annotated[Optional[int], typer.Option("-...` | `-` | 저장된 대화 목록을 표시합니다. |
-| `run` | `query: Annotated[str, typer.Option("--query", "...` | `-` | AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다. |
-| `is_port_in_use` | `port: int, host: str` | `bool` | - |
-| `run_server` | `host: Annotated[str, typer.Option(help="서버가 바인딩...` | `-` | FastAPI 오케스트레이터 서버를 실행합니다. |
-| `graph_cmd` | `center: Annotated[Optional[str], typer.Option("...` | `-` | 대화 관계 그래프를 Rich 뷰로 출력합니다. |
-| `migrate_cmd` | `dry_run: Annotated[bool, typer.Option("--dry-ru...` | `-` | 기존 JSON 히스토리를 SQLite로 마이그레이션합니다. |
-| `group_list` | `` | `-` | 그룹 목록 표시. |
-| `group_create` | `name: Annotated[str, typer.Argument(help="그룹 이름...` | `-` | 새 그룹 생성. |
-| `group_delete` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 그룹 삭제. |
-| `group_add_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에 추가. |
-| `group_remove_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에서 제거. |
-| `topic_list` | `` | `-` | 토픽 목록 표시. |
-| `topic_create` | `name: Annotated[str, typer.Argument(help="토픽 이름...` | `-` | 새 토픽 생성. |
-| `topic_delete` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 토픽 삭제. |
-| `topic_link` | `id_a: Annotated[int, typer.Argument(help="토픽 ID...` | `-` | 두 토픽을 양방향 연결. |
-| `topic_add_convo` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 대화를 토픽에 추가. |
-| `keyword_list` | `convo_id: Annotated[Optional[str], typer.Argume...` | `-` | 키워드 목록 표시. 대화 UUID를 지정하면 해당 대화의 키워드만 표시. |
-| `keyword_edit` | `convo_id: Annotated[str, typer.Argument(help="대...` | `-` | 대화의 키워드를 수동으로 편집합니다. |
-| `keyword_search` | `keyword: Annotated[str, typer.Argument(help="검색...` | `-` | 키워드로 대화를 검색합니다. |
-| `mcp_list` | `all_servers: Annotated[bool, typer.Option("--al...` | `-` | 등록된 MCP 서버 목록을 표시합니다. |
-| `mcp_add` | `name: Annotated[str, typer.Argument(help="서버 이름...` | `-` | MCP 서버를 레지스트리에 추가합니다. |
-| `mcp_remove` | `name: Annotated[str, typer.Argument(help="제거할 서...` | `-` | MCP 서버를 레지스트리에서 제거합니다. |
-| `mcp_search` | `query: Annotated[str, typer.Argument(help="검색 키...` | `-` | npm/PyPI에서 MCP 서버 패키지를 검색합니다. |
-| `mcp_enable` | `name: Annotated[str, typer.Argument(help="활성화할 ...` | `-` | MCP 서버를 활성화합니다. |
-| `mcp_disable` | `name: Annotated[str, typer.Argument(help="비활성화할...` | `-` | MCP 서버를 비활성화합니다. |
-| `func_add` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수를 DB에 등록합니다. |
-| `func_list` | `group: Annotated[Optional[str], typer.Option("-...` | `-` | 등록된 함수 목록을 표시합니다. |
-| `func_versions` | `name: Annotated[str, typer.Argument(help="함수 이름")]` | `-` | 함수의 버전 이력을 표시합니다. |
-| `func_show` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 상세 정보 및 코드를 출력합니다. |
-| `func_test` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 테스트를 실행합니다. |
-| `func_import` | `file: Annotated[str, typer.Argument(help="임포트할 ...` | `-` | Python 파일의 함수들을 DB로 일괄 임포트합니다. |
-| `func_update` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 코드를 업데이트합니다 (새 버전으로 등록). |
-| `func_edit_test` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수의 테스트 코드를 업데이트하고 테스트를 실행합니다. |
-| `func_activate` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 특정 버전을 수동으로 활성화합니다 (롤백/롤포워드). |
-| `func_template` | `name: Annotated[Optional[str], typer.Argument(h...` | `-` | 독립 실행형 테스트 코드 작성 가이드를 출력합니다. |
-| `mcp_stats` | `func: Annotated[Optional[str], typer.Option("--...` | `-` | MCP 함수 실행 통계를 표시합니다. |
-| `model_status` | `` | `-` | 현재 활성 프로바이더와 모델을 표시합니다. |
-| `model_list` | `provider: Annotated[Optional[str], typer.Option...` | `-` | 프로바이더별 사용 가능한 모델 목록을 조회합니다. |
-| `model_set` | `provider: Annotated[str, typer.Argument(help="프...` | `-` | 활성 프로바이더와 모델을 변경합니다. |
-| `prompt_list` | `` | `-` | 등록된 시스템 프롬프트 목록 표시. |
-| `prompt_show` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 내용 출력. |
-| `prompt_create` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 새 시스템 프롬프트 생성. |
-| `prompt_edit` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 수정. |
-| `prompt_delete` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 삭제. |
-| `prompt_import` | `directory: Annotated[str, typer.Option("--dir",...` | `-` | system_prompts/*.txt 파일을 DB로 임포트합니다. |
-| `skill_list` | `all_skills: Annotated[bool, typer.Option("--all...` | `-` | 등록된 스킬 목록 표시. |
-| `skill_sync` | `` | `-` | 로컬 모듈에서 스킬을 동기화합니다. |
-| `skill_enable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 활성화. |
-| `skill_disable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 비활성화. |
-| `skill_show` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 상세 정보 출력. |
-| `macro_list` | `` | `-` | 등록된 스킬 매크로 목록 표시. |
-| `macro_show` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 상세 정보 출력. |
-| `macro_create` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 새 스킬 매크로 생성. |
-| `macro_edit` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 수정. |
-| `macro_delete` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 삭제. |
-| `macro_render` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 렌더링 (변수 치환). |
-| `workflow_list` | `` | `-` | 등록된 워크플로우 목록 표시. |
-| `workflow_show` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 상세 정보 출력. |
-| `workflow_create` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 새 빈 워크플로우 생성. |
-| `workflow_add_step` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우에 스텝 추가. |
-| `workflow_delete` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 삭제. |
-| `persona_list` | `` | `-` | 등록된 페르소나 목록 표시. |
-| `persona_show` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 상세 정보 출력. |
-| `persona_create` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 새 페르소나 생성. |
-| `persona_edit` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 수정. |
-| `persona_delete` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 삭제. |
-| `persona_set_default` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나를 기본값으로 설정. |
-| `persona_detect` | `query: Annotated[str, typer.Argument(help="자동 감...` | `-` | 쿼리에 대해 자동 감지되는 페르소나를 출력합니다. |
-| `issue_list` | `status: Optional[str], source: Optional[str], l...` | `-` | 이슈 목록을 출력합니다. |
-| `issue_show` | `issue_id: int` | `-` | 이슈 상세 정보를 출력합니다. |
-| `issue_resolve` | `issue_id: int, note: str` | `-` | 이슈를 resolved 상태로 변경합니다. |
-| `issue_ignore` | `issue_id: int` | `-` | 이슈를 ignored 상태로 변경합니다. |
-| `test_import` | `file_path: str` | `-` | 단일 테스트 파일을 DB에 저장합니다. |
-| `test_import_all` | `` | `-` | orchestrator/ 디렉토리의 test_*.py 파일을 모두 DB에 저장합니다. |
-| `test_list` | `` | `-` | DB에 저장된 테스트 목록을 표시합니다. |
-| `test_show` | `name: str` | `-` | 저장된 테스트 코드를 출력합니다. |
-| `test_run` | `name: str` | `-` | 특정 테스트를 실행합니다. |
-| `test_run_all` | `` | `-` | 저장된 모든 테스트를 실행하고 요약을 출력합니다. |
-| `template_list` | `active_only: bool, limit: int` | `None` | 실행 템플릿 목록을 조회합니다. |
-| `template_show` | `template_id: int` | `None` | 템플릿 상세 정보를 출력합니다. |
-| `template_stats` | `` | `None` | 템플릿 통계를 출력합니다. |
-| `template_disable` | `template_id: int` | `None` | 템플릿을 비활성화합니다. |
-| `template_enable` | `template_id: int` | `None` | 템플릿을 활성화합니다. |
-| `template_delete` | `template_id: int, yes: bool` | `None` | 템플릿을 삭제합니다. |
-| `gap_report` | `limit: int` | `None` | 도구 부재 이력을 조회합니다. |
-| `gap_discover` | `tool: str, context: str` | `None` | 특정 도구를 MCP 탐색 → Python 자동 구현 순으로 해결합니다. |
 
-의존성: `asyncio`, `click`, `dotenv`, `httpx`, `json`, `orchestrator`, `os`, `pathlib`, `rich`, `shutil`
+의존성: `cli`, `click`, `dotenv`, `sys`, `typer`
 
 #### `mcp_servers.json` (211줄, 7,511B)
 
-#### `model_config.json` (38줄, 996B)
+#### `model_config.json` (40줄, 1,106B)
 
 #### `pytest.ini` (4줄, 57B)
 
-#### `requirements.txt` (36줄, 1,816B)
+#### `requirements.txt` (37줄, 1,836B)
 
 #### `start.sh` (3줄, 81B)
 
@@ -644,15 +567,178 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `dataclasses`, `json`, `pathlib`, `project_tracker`, `re`, `subprocess`, `sys`, `typing`
 
+### cli/
+
+#### `__init__.py` (1줄, 42B)
+
+#### `_run_cmd.py` (405줄, 20,716B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `run` | `query: Annotated[str, typer.Option("--query", "...` | `-` | AI 에이전트와 상호작용을 시작합니다. 새로운 쿼리 또는 기존 대화 ID가 필요합니다. |
+
+의존성: `asyncio`, `core`, `httpx`, `json`, `orchestrator`, `os`, `rich`, `time`, `typer`, `typing`
+
+#### `agent_config_cmds.py` (575줄, 25,415B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `prompt_list` | `` | `-` | 등록된 시스템 프롬프트 목록 표시. |
+| `prompt_show` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 내용 출력. |
+| `prompt_create` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 새 시스템 프롬프트 생성. |
+| `prompt_edit` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 수정. |
+| `prompt_delete` | `name: Annotated[str, typer.Argument(help="프롬프트 ...` | `-` | 시스템 프롬프트 삭제. |
+| `prompt_import` | `directory: Annotated[str, typer.Option("--dir",...` | `-` | system_prompts/*.txt 파일을 DB로 임포트합니다. |
+| `skill_list` | `all_skills: Annotated[bool, typer.Option("--all...` | `-` | 등록된 스킬 목록 표시. |
+| `skill_sync` | `` | `-` | 로컬 모듈에서 스킬을 동기화합니다. |
+| `skill_enable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 활성화. |
+| `skill_disable` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 비활성화. |
+| `skill_show` | `name: Annotated[str, typer.Argument(help="스킬 이름")]` | `-` | 스킬 상세 정보 출력. |
+| `skill_status` | `` | `-` | 현재 로드된 도구(로컬 + MCP + 온디맨드) 실제 상태 출력. |
+| `macro_list` | `` | `-` | 등록된 스킬 매크로 목록 표시. |
+| `macro_show` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 상세 정보 출력. |
+| `macro_create` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 새 스킬 매크로 생성. |
+| `macro_edit` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 수정. |
+| `macro_delete` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 삭제. |
+| `macro_render` | `name: Annotated[str, typer.Argument(help="매크로 이...` | `-` | 매크로 렌더링 (변수 치환). |
+| `workflow_list` | `` | `-` | 등록된 워크플로우 목록 표시. |
+| `workflow_show` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 상세 정보 출력. |
+| `workflow_create` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 새 빈 워크플로우 생성. |
+| `workflow_add_step` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우에 스텝 추가. |
+| `workflow_delete` | `name: Annotated[str, typer.Argument(help="워크플로우...` | `-` | 워크플로우 삭제. |
+| `persona_list` | `` | `-` | 등록된 페르소나 목록 표시. |
+| `persona_show` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 상세 정보 출력. |
+| `persona_create` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 새 페르소나 생성. |
+| `persona_edit` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 수정. |
+| `persona_delete` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나 삭제. |
+| `persona_set_default` | `name: Annotated[str, typer.Argument(help="페르소나 ...` | `-` | 페르소나를 기본값으로 설정. |
+| `persona_detect` | `query: Annotated[str, typer.Argument(help="자동 감...` | `-` | 쿼리에 대해 자동 감지되는 페르소나를 출력합니다. |
+
+의존성: `core`, `httpx`, `json`, `orchestrator`, `rich`, `typer`, `typing`, `typing_extensions`
+
+#### `conv_cmds.py` (205줄, 8,108B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `group_list` | `` | `-` | 그룹 목록 표시. |
+| `group_create` | `name: Annotated[str, typer.Argument(help="그룹 이름...` | `-` | 새 그룹 생성. |
+| `group_delete` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 그룹 삭제. |
+| `group_add_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에 추가. |
+| `group_remove_convo` | `group_id: Annotated[int, typer.Argument(help="그...` | `-` | 대화를 그룹에서 제거. |
+| `topic_list` | `` | `-` | 토픽 목록 표시. |
+| `topic_create` | `name: Annotated[str, typer.Argument(help="토픽 이름...` | `-` | 새 토픽 생성. |
+| `topic_delete` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 토픽 삭제. |
+| `topic_link` | `id_a: Annotated[int, typer.Argument(help="토픽 ID...` | `-` | 두 토픽을 양방향 연결. |
+| `topic_add_convo` | `topic_id: Annotated[int, typer.Argument(help="토...` | `-` | 대화를 토픽에 추가. |
+| `keyword_list` | `convo_id: Annotated[Optional[str], typer.Argume...` | `-` | 키워드 목록 표시. 대화 UUID를 지정하면 해당 대화의 키워드만 표시. |
+| `keyword_edit` | `convo_id: Annotated[str, typer.Argument(help="대...` | `-` | 대화의 키워드를 수동으로 편집합니다. |
+| `keyword_search` | `keyword: Annotated[str, typer.Argument(help="검색...` | `-` | 키워드로 대화를 검색합니다. |
+
+의존성: `core`, `orchestrator`, `rich`, `typer`, `typing`, `typing_extensions`
+
+#### `core.py` (447줄, 19,108B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `list_conversations_cmd` | `group: Annotated[Optional[int], typer.Option("-...` | `-` | 저장된 대화 목록을 표시합니다. |
+| `is_port_in_use` | `port: int, host: str` | `bool` | - |
+| `run_server` | `host: Annotated[str, typer.Option(help="서버가 바인딩...` | `-` | FastAPI 오케스트레이터 서버를 실행합니다. |
+| `graph_cmd` | `center: Annotated[Optional[str], typer.Option("...` | `-` | 대화 관계 그래프를 Rich 뷰로 출력합니다. |
+| `migrate_cmd` | `dry_run: Annotated[bool, typer.Option("--dry-ru...` | `-` | 기존 JSON 히스토리를 SQLite로 마이그레이션합니다. |
+
+의존성: `asyncio`, `dotenv`, `httpx`, `json`, `orchestrator`, `os`, `pathlib`, `re`, `rich`, `shutil`
+
+#### `mcp_cmds.py` (480줄, 22,949B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `mcp_list` | `all_servers: Annotated[bool, typer.Option("--al...` | `-` | 등록된 MCP 서버 목록을 표시합니다. |
+| `mcp_add` | `name: Annotated[str, typer.Argument(help="서버 이름...` | `-` | MCP 서버를 레지스트리에 추가합니다. |
+| `mcp_remove` | `name: Annotated[str, typer.Argument(help="제거할 서...` | `-` | MCP 서버를 레지스트리에서 제거합니다. |
+| `mcp_search` | `query: Annotated[str, typer.Argument(help="검색 키...` | `-` | npm/PyPI에서 MCP 서버 패키지를 검색합니다. |
+| `mcp_enable` | `name: Annotated[str, typer.Argument(help="활성화할 ...` | `-` | MCP 서버를 활성화합니다. |
+| `mcp_disable` | `name: Annotated[str, typer.Argument(help="비활성화할...` | `-` | MCP 서버를 비활성화합니다. |
+| `mcp_stats` | `func: Annotated[Optional[str], typer.Option("--...` | `-` | MCP 함수 실행 통계를 표시합니다. |
+| `func_add` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수를 DB에 등록합니다. |
+| `func_list` | `group: Annotated[Optional[str], typer.Option("-...` | `-` | 등록된 함수 목록을 표시합니다. |
+| `func_versions` | `name: Annotated[str, typer.Argument(help="함수 이름")]` | `-` | 함수의 버전 이력을 표시합니다. |
+| `func_show` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 상세 정보 및 코드를 출력합니다. |
+| `func_test` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 테스트를 실행합니다. |
+| `func_import` | `file: Annotated[str, typer.Argument(help="임포트할 ...` | `-` | Python 파일의 함수들을 DB로 일괄 임포트합니다. |
+| `func_update` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수 코드를 업데이트합니다 (새 버전으로 등록). |
+| `func_edit_test` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 함수의 테스트 코드를 업데이트하고 테스트를 실행합니다. |
+| `func_activate` | `name: Annotated[str, typer.Argument(help="함수 이름...` | `-` | 특정 버전을 수동으로 활성화합니다 (롤백/롤포워드). |
+| `func_template` | `name: Annotated[Optional[str], typer.Argument(h...` | `-` | 독립 실행형 테스트 코드 작성 가이드를 출력합니다. |
+
+의존성: `asyncio`, `core`, `orchestrator`, `pathlib`, `rich`, `typer`, `typing`, `typing_extensions`
+
+#### `model_cmds.py` (132줄, 5,283B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `model_status` | `` | `-` | 현재 활성 프로바이더와 모델을 표시합니다. |
+| `model_list` | `provider: Annotated[Optional[str], typer.Option...` | `-` | 프로바이더별 사용 가능한 모델 목록을 조회합니다. |
+| `model_set` | `provider: Annotated[str, typer.Argument(help="프...` | `-` | 활성 프로바이더와 모델을 변경합니다. |
+
+의존성: `asyncio`, `core`, `orchestrator`, `rich`, `typer`, `typing`, `typing_extensions`
+
+#### `ops_cmds.py` (463줄, 20,100B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `issue_list` | `status: Optional[str], source: Optional[str], l...` | `-` | 이슈 목록을 출력합니다. |
+| `issue_show` | `issue_id: int` | `-` | 이슈 상세 정보를 출력합니다. |
+| `issue_resolve` | `issue_id: int, note: str` | `-` | 이슈를 resolved 상태로 변경합니다. |
+| `issue_ignore` | `issue_id: int` | `-` | 이슈를 ignored 상태로 변경합니다. |
+| `test_import` | `file_path: str` | `-` | 단일 테스트 파일을 DB에 저장합니다. |
+| `test_import_all` | `` | `-` | orchestrator/ 디렉토리의 test_*.py 파일을 모두 DB에 저장합니다. |
+| `test_list` | `` | `-` | DB에 저장된 테스트 목록을 표시합니다. |
+| `test_show` | `name: str` | `-` | 저장된 테스트 코드를 출력합니다. |
+| `test_run` | `name: str` | `-` | 특정 테스트를 실행합니다. |
+| `test_run_all` | `` | `-` | 저장된 모든 테스트를 실행하고 요약을 출력합니다. |
+| `template_list` | `active_only: bool, limit: int` | `None` | 실행 템플릿 목록을 조회합니다. |
+| `template_show` | `template_id: int` | `None` | 템플릿 상세 정보를 출력합니다. |
+| `template_stats` | `` | `None` | 템플릿 통계를 출력합니다. |
+| `template_disable` | `template_id: int` | `None` | 템플릿을 비활성화합니다. |
+| `template_enable` | `template_id: int` | `None` | 템플릿을 활성화합니다. |
+| `template_delete` | `template_id: int, yes: bool` | `None` | 템플릿을 삭제합니다. |
+| `gap_report` | `limit: int` | `None` | 도구 부재 이력을 조회합니다. |
+| `gap_discover` | `tool: str, context: str` | `None` | 특정 도구를 MCP 탐색 → Python 자동 구현 순으로 해결합니다. |
+| `provider_status` | `` | `-` | LLM 프로바이더 Circuit Breaker 상태 출력 (차단 중인 프로바이더 및 재시도 시각). |
+
+의존성: `asyncio`, `core`, `httpx`, `json`, `orchestrator`, `rich`, `typer`, `typing`, `typing_extensions`
+
 ### history/
 
-#### `conversations.db` (?줄, 946,176B)
+#### `conversations.db` (?줄, 1,024,000B)
+
+### mcp_cache/
+
+#### `mod2.py` (6줄, 136B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `fn2` | `` | `-` | - |
+
+#### `mymod.py` (6줄, 141B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `fn1` | `` | `-` | - |
+
+#### `pmod.py` (9줄, 157B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `pf` | `` | `-` | - |
+
+의존성: `os`
 
 ### mcp_modules/
 
 #### `__init__.py` (1줄, 26B)
 
-#### `hashline_editor.py` (199줄, 7,826B)
+#### `hashline_editor.py` (224줄, 8,654B)
 > Hashline 편집 도구 — LLM이 라인 해시로 파일을 안전하게 편집할 수 있게 합니다.  파일 읽기 시 각 라인에 {n}#{hash}| 접두사를 붙이고, 편집 시 해시를 검증하여 스테일 라인 충돌을 방지합니다.  OMO(Oh My OpenCode) 알고리즘 포팅:   성공률 6.7% → 68.3% 향상 (원본 벤치마크 기준)
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -660,7 +746,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `read_file_with_hashes` | `path: str` | `str` | 파일을 읽고 각 라인에 {n}#{hash}| 접두사를 추가하여 반환합니다. |
 | `hashline_edit` | `path: str, edits: str` | `str` | 해시 참조로 파일을 안전하게 편집합니다. |
 
-의존성: `json`, `re`, `typing`, `zlib`
+의존성: `json`, `os`, `pathlib`, `re`, `typing`, `zlib`
 
 #### `test_hashline_editor.py` (203줄, 6,741B)
 > Hashline 편집 도구 단위 테스트.
@@ -689,14 +775,34 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `logging`
 
-#### `agent_config_manager.py` (1013줄, 36,959B)
-> 에이전트 설정 관리 모듈 — 시스템 프롬프트, 스킬, 매크로, 워크플로우, 페르소나.
+#### `_agent_handlers.py` (299줄, 11,393B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+
+의존성: `_api_helpers`, `constants`, `llm_client`, `logging`, `models`
+
+#### `_api_helpers.py` (235줄, 9,169B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+
+의존성: `constants`, `inspect`, `llm_client`, `logging`, `models`, `os`, `time`
+
+#### `_circuit_breaker.py` (188줄, 6,628B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `get_provider_status` | `` | `Dict[str, Dict]` | 현재 프로바이더 Circuit Breaker 상태를 반환. |
+
+의존성: `constants`, `datetime`, `httpx`, `logging`, `model_manager`, `time`, `typing`
+
+#### `_config_store.py` (630줄, 22,146B)
+> 에이전트 설정 DB 초기화, 시드, CRUD 함수 모음.
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `init_db` | `path: Path` | `None` | 에이전트 설정 5개 테이블을 IF NOT EXISTS로 생성. |
-| `get_prompt` | `name: str, db_path: Path` | `str` | 캐시 우선으로 프롬프트 내용을 반환합니다. 없으면 KeyError 발생. |
-| `render_prompt` | `name: str, db_path: Path` | `str` | 프롬프트 템플릿을 로드하여 변수를 치환합니다 (format_map 사용). |
 | `create_system_prompt` | `name: str, content: str, description: str, is_d...` | `int` | 시스템 프롬프트 생성. is_default=True면 기존 기본값 해제 후 설정. |
 | `get_system_prompt` | `name: str, db_path: Path` | `Optional[Dict]` | - |
 | `get_default_system_prompt` | `db_path: Path` | `Optional[Dict]` | - |
@@ -726,33 +832,110 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `delete_persona` | `name: str, db_path: Path` | `bool` | - |
 | `get_effective_persona` | `query: str, explicit_name: Optional[str], db_pa...` | `Optional[Dict]` | 페르소나 자동 감지 알고리즘: |
 
-의존성: `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `tool_registry`, `typing`
+의존성: `_default_prompts`, `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `tool_registry`, `typing`
 
-#### `api.py` (891줄, 37,884B)
+#### `_default_prompts.py` (422줄, 16,605B)
+
+의존성: `typing`
+
+#### `_llm_utils.py` (182줄, 7,054B)
+> LLM 클라이언트 공통 유틸리티.  모든 LLM 클라이언트(gemini/claude/openai/grok/ollama)에서 동일하게 사용하는 헬퍼 함수를 한 곳에 정의합니다.  call_fn 통합 시그니처: async (system, user, model, json_mode) -> str
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `async generate_execution_plan_with_caller` | `call_fn: Callable, user_query: str, requirement...` | `list` | 공통 실행 계획 생성 로직 (ReAct 플래너). call_fn만 프로바이더별로 다름. |
+| `async generate_final_answer_with_caller` | `call_fn: Callable, history: list, model_name: str` | `str` | 공통 최종 답변 생성 로직. 실패 시 마지막 실행 결과로 폴백. |
+| `async extract_keywords_with_caller` | `call_fn: Callable, history: list, model_name: str` | `List[str]` | 공통 키워드 추출 로직. call_fn만 프로바이더별로 다름. |
+| `async detect_topic_split_with_caller` | `call_fn: Callable, history: list, model_name: str` | `Optional[Dict[str, Any]]` | 공통 주제 분리 감지 로직. call_fn만 프로바이더별로 다름. |
+| `async generate_title_with_caller` | `call_fn: Callable, history: list, model_name: str` | `str` | 공통 대화 제목 생성 로직. call_fn만 프로바이더별로 다름. |
+
+의존성: `constants`, `json`, `logging`, `models`, `re`, `tool_registry`, `typing`
+
+#### `_mcp_code_ops.py` (519줄, 19,016B)
+> MCP 함수 코드 등록, 실행 테스트, 캐시 모듈 생성, 파일 마이그레이션.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `register_function` | `func_name: str, module_group: str, code: str, t...` | `Dict` | 함수를 DB에 새 버전으로 등록합니다. |
+| `add_function` | `func_name: str, module_group: str, code: str, d...` | `int` | 함수를 즉시 활성화하여 DB에 등록하고 row ID를 반환합니다. |
+| `run_function_tests` | `func_name: str, version: int, db_path` | `Dict` | pytest를 subprocess로 실행하여 함수 테스트를 수행합니다. |
+| `generate_temp_module` | `module_group: str, db_path` | `Path` | 활성 함수들을 조합하여 mcp_cache/{module_group}.py 를 생성합니다. |
+| `load_module_in_memory` | `module_group: str, db_path` | `dict` | DB 활성 함수들을 exec()으로 메모리에 로드. {func_name: callable} 반환. |
+| `import_from_file` | `file_path: str, module_group: Optional[str], te...` | `Dict` | 기존 Python 파일에서 공개 함수를 DB로 임포트합니다. |
+| `update_function_test_code` | `func_name: str, test_code: str, version: Option...` | `Dict` | 기존 버전의 test_code를 업데이트하고 선택적으로 테스트를 실행합니다. |
+| `activate_function` | `func_name: str, version: int, db_path` | `None` | 특정 버전을 수동으로 활성화합니다. |
+| `set_module_preamble` | `module_group: str, preamble_code: str, descript...` | `None` | 모듈 그룹의 preamble 코드를 직접 설정합니다. |
+
+의존성: `ast`, `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `subprocess`, `sys`
+
+#### `_mcp_usage_tracker.py` (156줄, 5,306B)
+> MCP 함수 사용 통계 및 세션 관리.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `start_session` | `conversation_id: Optional[str], group_id: str, ...` | `str` | 실행 세션을 시작하고 session_id(UUID)를 반환합니다. |
+| `end_session` | `session_id: str, overall_success: bool, db_path` | `None` | 실행 세션을 종료합니다. |
+| `log_usage` | `func_name: str, success: bool, session_id: Opti...` | `None` | 함수 실행 로그를 기록합니다. |
+| `get_usage_stats` | `func_name: Optional[str], module_group: Optiona...` | `Dict` | 사용 통계를 집계합니다. |
+
+의존성: `constants`, `graph_manager`, `json`, `logging`, `pathlib`, `typing`, `uuid`
+
+#### `_template_db.py` (277줄, 10,342B)
+> 파이프라인 실행 템플릿, 계획 캐시, 도구 부재(gap) 로그 관리.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `save_execution_template` | `name: str, description: str, keywords: List[str...` | `int` | 실행 그룹 템플릿을 저장하고 template_id를 반환합니다. |
+| `find_best_template` | `keywords: List[str], path` | `Optional[Dict[str, Any]]` | 키워드 중복 수로 가장 유사한 활성 템플릿을 반환합니다 (기본 조회용). |
+| `list_templates` | `active_only: bool, limit: int, offset: int, path` | `List[Dict[str, Any]]` | 템플릿 목록을 반환합니다 (success_count 내림차순). |
+| `get_template` | `template_id: int, path` | `Optional[Dict[str, Any]]` | 단일 템플릿 전체 정보를 반환합니다. |
+| `disable_template` | `template_id: int, path` | `None` | 템플릿을 비활성화합니다. |
+| `enable_template` | `template_id: int, path` | `None` | 템플릿을 활성화합니다. |
+| `delete_template` | `template_id: int, path` | `None` | 템플릿을 삭제합니다. |
+| `get_template_stats` | `path` | `Dict[str, Any]` | 템플릿 전체 통계를 반환합니다. |
+| `auto_disable_failing_templates` | `fail_rate_threshold: float, min_uses: int, path` | `List[int]` | 실패율이 임계값을 초과한 템플릿을 자동 비활성화합니다. |
+| `increment_template_fail` | `template_id: int, path` | `None` | - |
+| `get_task_plan_cache` | `task_signature: str, path` | `Optional[List[Dict[str, Any]]]` | 태스크 시그니처로 캐시된 계획 단계를 반환하고 use_count를 증가시킵니다. |
+| `save_task_plan_cache` | `task_signature: str, keywords: List[str], plans...` | `None` | 태스크 계획 매핑 결과를 캐시에 저장합니다 (UPSERT). |
+| `log_tool_gap` | `required_tool: str, resolution_type: str, mcp_s...` | `None` | 도구 부재 이벤트를 기록합니다. 예외는 절대 발생시키지 않습니다. |
+
+의존성: `constants`, `graph_manager`, `json`, `logging`, `typing`
+
+#### `agent_config_manager.py` (77줄, 2,395B)
+> 에이전트 설정 관리 모듈 — 시스템 프롬프트, 스킬, 매크로, 워크플로우, 페르소나.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `get_prompt` | `name: str, db_path: Path` | `str` | 캐시 우선으로 프롬프트 내용을 반환합니다. 없으면 KeyError 발생. |
+| `render_prompt` | `name: str, db_path: Path` | `str` | 프롬프트 템플릿을 로드하여 변수를 치환합니다 (format_map 사용). |
+
+의존성: `_config_store`, `graph_manager`, `logging`, `pathlib`, `typing`
+
+#### `api.py` (518줄, 20,199B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `async lifespan` | `app: FastAPI` | `-` | - |
-| `async decide_and_act` | `request: AgentRequest` | `-` | (수정) ReAct 루프의 핵심. |
+| `async decide_and_act` | `request: AgentRequest` | `-` | ReAct 루프의 핵심. |
 | `async execute_group` | `request: AgentRequest` | `-` | 저장된 그룹을 실행합니다. can_parallel=True 그룹은 병렬 실행 [A]. |
 | `async pipeline_endpoint` | `request: AgentRequest` | `-` | 4층 파이프라인 통합 엔드포인트. |
 | `async pipeline_execute` | `request: AgentRequest` | `-` | 파이프라인 전용 그룹 실행 엔드포인트. |
 
-의존성: `asyncio`, `constants`, `contextlib`, `datetime`, `fastapi`, `inspect`, `llm_client`, `logging`, `models`, `os`
+의존성: `_agent_handlers`, `_api_helpers`, `asyncio`, `constants`, `contextlib`, `datetime`, `fastapi`, `inspect`, `llm_client`, `logging`
 
-#### `claude_client.py` (290줄, 10,150B)
+#### `claude_client.py` (178줄, 5,817B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `List[ExecutionGroup]` | ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다. |
 | `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
-| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | Claude로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함). |
+| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | Claude로 키워드 5~10개 추출. 실패 시 [] 반환. |
 | `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | Claude로 주제 전환 지점 감지. 실패 시 None 반환. |
 | `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
 
-의존성: `constants`, `dotenv`, `httpx`, `json`, `logging`, `models`, `os`, `re`, `tool_registry`, `typing`
+의존성: `_llm_utils`, `constants`, `dotenv`, `httpx`, `json`, `logging`, `models`, `os`, `typing`
 
-#### `config.py` (266줄, 8,313B)
+#### `config.py` (267줄, 8,335B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -765,29 +948,30 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `json`, `logging`, `model_manager`, `os`, `sys`, `typing`
 
-#### `constants.py` (62줄, 1,982B)
+#### `constants.py` (111줄, 3,835B)
 > 프로젝트 전역 상수 정의.  이 파일에 정의된 상수들은 여러 모듈에서 공유됩니다. 값 변경 시 이 파일만 수정하면 됩니다.
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `utcnow` | `` | `str` | 현재 UTC 시각을 'YYYY-MM-DDTHH:MM:SS' 형식 문자열로 반환합니다. |
 | `utcnow_timestamp` | `` | `float` | 현재 UTC 시각을 Unix timestamp(float)로 반환합니다. |
+| `truncate_history` | `history: list, max_chars: int` | `str` | 최근 대화 우선 보존하는 캐릭터 예산 기반 히스토리 truncation. |
 
 의존성: `datetime`, `typing`
 
-#### `gemini_client.py` (282줄, 9,672B)
+#### `gemini_client.py` (152줄, 5,474B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `List[ExecutionGroup]` | ReAct 아키텍처에 맞게 '다음 1개'의 실행 그룹을 생성합니다. |
 | `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
-| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | Gemini로 키워드 5~10개 추출. 실패 시 [] 반환 (예외 전파 안 함). |
+| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | Gemini로 키워드 5~10개 추출. 실패 시 [] 반환. |
 | `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | Gemini로 주제 전환 지점 감지. 실패 시 None 반환. |
 | `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
 
-의존성: `constants`, `dotenv`, `google`, `json`, `logging`, `model_manager`, `models`, `os`, `tool_registry`, `typing`
+의존성: `_llm_utils`, `constants`, `dotenv`, `google`, `logging`, `model_manager`, `models`, `os`, `typing`
 
-#### `graph_manager.py` (942줄, 33,336B)
+#### `graph_manager.py` (725줄, 26,085B)
 > SQLite 기반 대화 지식 그래프 관리 모듈.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -817,12 +1001,29 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `link_conversations` | `convo_id_a: str, convo_id_b: str, link_type: st...` | `None` | - |
 | `get_linked_conversations` | `convo_id: str, link_type: Optional[str], db_pat...` | `List[Dict]` | - |
 | `split_conversation` | `original_id: str, split_point_index: int, db_pa...` | `Tuple[str, str]` | history[:idx] → 원본 유지 (status='split') |
+
+의존성: `constants`, `contextlib`, `datetime`, `graph_renderer`, `json`, `logging`, `pathlib`, `sqlite3`, `typing`, `uuid`
+
+#### `graph_renderer.py` (175줄, 6,714B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
 | `get_graph_data` | `center_id: Optional[str], depth: int, db_path: ...` | `Dict` | nodes/edges 딕셔너리 반환. |
 | `render_graph` | `graph_data: Dict, center_id: Optional[str]` | `None` | Rich Panel로 그래프 출력. |
-| `save_wisdom` | `convo_id: str, entries: List[dict], db_path: Path` | `None` | 실행 결과에서 추출한 지식 항목을 저장합니다. |
-| `load_wisdom` | `convo_id: str, limit: int, db_path: Path` | `List[dict]` | 대화에 저장된 지식 항목을 반환합니다 (최신순). |
 
-의존성: `constants`, `contextlib`, `datetime`, `json`, `logging`, `pathlib`, `rich`, `sqlite3`, `typing`, `uuid`
+의존성: `graph_manager`, `pathlib`, `rich`, `typing`
+
+#### `grok_client.py` (156줄, 4,753B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `List[ExecutionGroup]` | - |
+| `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
+| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | - |
+| `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | - |
+| `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
+
+의존성: `_llm_utils`, `constants`, `dotenv`, `httpx`, `logging`, `models`, `os`, `typing`
 
 #### `history_manager.py` (55줄, 1,726B)
 > 얇은 어댑터 레이어 — graph_manager에 모든 기능을 위임한다. 기존 함수 시그니처 100% 유지.
@@ -837,7 +1038,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `typing`, `uuid`
 
-#### `issue_tracker.py` (181줄, 6,513B)
+#### `issue_tracker.py` (179줄, 5,996B)
 > 런타임 이슈 자동 저장 모듈.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -849,13 +1050,14 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `get_issue` | `issue_id: int, db_path` | `Optional[Dict]` | 단일 이슈를 반환합니다. 없으면 None. |
 | `update_status` | `issue_id: int, status: str, resolution_note: st...` | `bool` | 이슈 상태를 갱신합니다. 성공 시 True 반환. |
 
-의존성: `datetime`, `graph_manager`, `logging`, `traceback`, `typing`
+의존성: `constants`, `graph_manager`, `logging`, `traceback`, `typing`
 
-#### `llm_client.py` (628줄, 21,802B)
+#### `llm_client.py` (641줄, 22,844B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
-| `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `-` | - |
+| `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `list` | 실행 계획 그룹 목록을 생성합니다. On error: raises (폴백 체인 소진 시). |
+| `async generate_parallel_plan` | `user_query: str, requirements_content: str, his...` | `-` | 병렬 플래닝 모드: 독립 태스크를 여러 그룹으로 한 번에 계획합니다. |
 | `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
 | `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | - |
 | `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | - |
@@ -863,6 +1065,8 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `async generate_clarifying_questions` | `user_query: str, model_preference: ModelPreference` | `List[str]` | 사용자 쿼리를 분석해 실행 전 확인이 필요한 질문 목록을 반환합니다. |
 | `async summarize_history` | `history: list, model_preference: ModelPreference` | `str` | 긴 히스토리를 핵심 내용 위주로 요약한 문자열을 반환합니다. |
 | `async classify_intent` | `user_query: str, model_preference: ModelPreference` | `str` | 사용자 쿼리를 'chat' 또는 'task'로 분류합니다. |
+| `async classify_intent_full` | `user_query: str, model_preference: ModelPreference` | `str` | 사용자 쿼리를 5-카테고리로 분류합니다. |
+| `async classify_intent_and_category` | `user_query: str, model_preference: ModelPreference` | `tuple` | 의도(5-카테고리) + 복잡도(4-카테고리)를 단일 LLM 호출로 분류합니다. |
 | `async generate_design` | `user_query: str, persona_prompt: str, history: ...` | `Dict[str, Any]` | 사용자 쿼리를 분석해 고수준 설계를 생성합니다 (Design Phase). |
 | `async decompose_tasks` | `design: Dict[str, Any], user_query: str, model_...` | `List[Dict[str, str]]` | 설계를 실행 가능한 태스크 목록으로 분해합니다 (Task Decomposition Phase). |
 | `async map_plans` | `task: Dict[str, str], available_tools: List[str...` | `List[Dict[str, Any]]` | 태스크를 순서 있는 계획 단계(Plan Steps)로 매핑합니다 (Plan Mapping Phase). |
@@ -872,7 +1076,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `async classify_task_category` | `user_query: str` | `str` | 사용자 쿼리를 태스크 카테고리로 분류합니다 (LLM 없이 휴리스틱). |
 | `async adapt_template_arguments` | `template_group: Dict[str, Any], plan_step: Dict...` | `Dict[str, Any]` | 기존 템플릿의 구조를 유지하면서 arguments만 현재 컨텍스트에 맞게 교체합니다. |
 
-의존성: `constants`, `json`, `logging`, `model_manager`, `models`, `re`, `typing`
+의존성: `_circuit_breaker`, `_llm_utils`, `constants`, `json`, `logging`, `models`, `re`, `time`, `typing`
 
 #### `llm_router.py` (157줄, 6,105B)
 > Phase 4 — 파이프라인 단계별 LLM 티어 자동 라우팅.  각 파이프라인 단계의 복잡도를 분석해 high/standard/local 티어를 자동 결정합니다.  티어 정의:   high     : cloud LLM (claude-opus / gemini-2.5-pro 등) — 창의적 판단, 코드 생성   standard : cloud LLM (claud
@@ -887,29 +1091,17 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `logging`, `token_tracker`, `typing`
 
-#### `mcp_db_manager.py` (724줄, 26,981B)
+#### `mcp_db_manager.py` (159줄, 5,751B)
 > SQLite DB 기반 MCP 함수 관리 모듈.
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `init_db` | `path` | `None` | MCP 관련 테이블 4개를 생성합니다. |
-| `register_function` | `func_name: str, module_group: str, code: str, t...` | `Dict` | 함수를 DB에 새 버전으로 등록합니다. |
-| `run_function_tests` | `func_name: str, version: int, db_path` | `Dict` | pytest를 subprocess로 실행하여 함수 테스트를 수행합니다. |
-| `generate_temp_module` | `module_group: str, db_path` | `Path` | 활성 함수들을 조합하여 mcp_cache/{module_group}.py 를 생성합니다. |
-| `load_module_in_memory` | `module_group: str, db_path` | `dict` | DB 활성 함수들을 exec()으로 메모리에 로드. {func_name: callable} 반환. |
 | `get_active_function` | `func_name: str, db_path` | `Optional[Dict]` | 활성 버전의 함수 정보를 반환합니다. |
 | `list_functions` | `module_group: Optional[str], active_only: bool,...` | `List[Dict]` | 함수 목록을 반환합니다. |
 | `get_function_versions` | `func_name: str, db_path` | `List[Dict]` | 함수의 모든 버전 이력을 반환합니다. |
-| `start_session` | `conversation_id: Optional[str], group_id: str, ...` | `str` | 실행 세션을 시작하고 session_id(UUID)를 반환합니다. |
-| `end_session` | `session_id: str, overall_success: bool, db_path` | `None` | 실행 세션을 종료합니다. |
-| `log_usage` | `func_name: str, success: bool, session_id: Opti...` | `None` | 함수 실행 로그를 기록합니다. |
-| `get_usage_stats` | `func_name: Optional[str], module_group: Optiona...` | `Dict` | 사용 통계를 집계합니다. |
-| `import_from_file` | `file_path: str, module_group: Optional[str], te...` | `Dict` | 기존 Python 파일에서 공개 함수를 DB로 임포트합니다. |
-| `update_function_test_code` | `func_name: str, test_code: str, version: Option...` | `Dict` | 기존 버전의 test_code를 업데이트하고 선택적으로 테스트를 실행합니다. |
-| `activate_function` | `func_name: str, version: int, db_path` | `None` | 특정 버전을 수동으로 활성화합니다. |
-| `set_module_preamble` | `module_group: str, preamble_code: str, descript...` | `None` | 모듈 그룹의 preamble 코드를 직접 설정합니다. |
 
-의존성: `ast`, `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`, `subprocess`, `sys`
+의존성: `_mcp_code_ops`, `_mcp_usage_tracker`, `ast`, `constants`, `datetime`, `graph_manager`, `json`, `logging`, `pathlib`, `re`
 
 #### `mcp_manager.py` (267줄, 8,889B)
 > MCP 서버 레지스트리 관리 모듈.  서버 등록/제거/검색, 도구 중복 분석, 하드코딩 마이그레이션 등을 담당합니다.
@@ -931,13 +1123,13 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `contextlib`, `datetime`, `httpx`, `json`, `logging`, `mcp`, `os`, `subprocess`, `typing`
 
-#### `model_manager.py` (273줄, 9,381B)
+#### `model_manager.py` (255줄, 8,886B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
 | `load_config` | `path: str` | `Dict[str, Any]` | - |
 | `save_config` | `config: Dict[str, Any], path: str` | `None` | - |
-| `get_active_model` | `config: Optional[Dict[str, Any]]` | `tuple` | - |
+| `get_active_model` | `config: Optional[Dict[str, Any]]` | `Tuple[str, str]` | - |
 | `set_active_model` | `provider: str, model: str, config: Optional[Dic...` | `Dict[str, Any]` | - |
 | `list_providers` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, Any]]` | - |
 | `async fetch_models_gemini` | `config: Optional[Dict[str, Any]]` | `List[Dict[str, str]]` | - |
@@ -949,14 +1141,14 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `google`, `httpx`, `json`, `logging`, `os`, `typing`
 
-#### `models.py` (113줄, 4,570B)
+#### `models.py` (114줄, 4,712B)
 
 **class `TaskCategory`** (line 10)
 
 **class `AgentRequest`** (line 17)
 > CLI가 서버로 보내는 요청 모델
 
-**class `ToolCall`** (line 38)
+**class `ToolCall`** (line 39)
 > 단일 도구 호출(MCP)을 정의하는 모델
 
 | 메서드 | 인자 | 설명 |
@@ -964,23 +1156,23 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `validate_tool_name` | `cls, v: str` | 도구 이름에 위험 문자가 없는지 검증합니다. |
 | `validate_arguments_size` | `cls, v: Dict[str, Any]` | arguments 직렬화 크기를 10KB로 제한합니다. |
 
-**class `ExecutionGroup`** (line 69)
+**class `ExecutionGroup`** (line 70)
 > 여러 태스크를 묶는 실행 그룹 모델
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `validate_tasks_count` | `cls, v: List[ToolCall]` | 태스크 수를 50개로 제한합니다. |
 
-**class `WisdomEntry`** (line 85)
+**class `WisdomEntry`** (line 86)
 
-**class `PlanValidation`** (line 91)
+**class `PlanValidation`** (line 92)
 
-**class `AgentResponse`** (line 98)
+**class `AgentResponse`** (line 99)
 > 서버가 CLI로 보내는 응답 모델
 
 의존성: `json`, `pydantic`, `typing`
 
-#### `ollama_client.py` (264줄, 9,874B)
+#### `ollama_client.py` (152줄, 5,118B)
 > Ollama 로컬 LLM 클라이언트.  8GB RAM 환경 기준 모델:   HIGH    : qwen2.5-coder:7b  (~4.5GB, 코딩 고성능)   STANDARD: qwen2.5-coder:3b  (~2.0GB, 코딩 경량/균형)  Gemini/Claude 클라이언트와 동일한 함수 인터페이스를 제공합니다.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -991,9 +1183,21 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | 대화에서 주제 전환 지점을 감지합니다. 실패 시 None 반환. |
 | `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | 대화 내용을 요약한 5단어 이내 제목을 생성합니다. |
 
-의존성: `constants`, `dotenv`, `httpx`, `json`, `logging`, `models`, `os`, `tool_registry`, `typing`
+의존성: `_llm_utils`, `constants`, `dotenv`, `httpx`, `logging`, `models`, `os`, `typing`
 
-#### `pipeline_db.py` (615줄, 23,761B)
+#### `openai_client.py` (157줄, 4,767B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `async generate_execution_plan` | `user_query: str, requirements_content: str, his...` | `List[ExecutionGroup]` | - |
+| `async generate_final_answer` | `history: list, model_preference: ModelPreference` | `str` | - |
+| `async extract_keywords` | `history: list, model_preference: ModelPreference` | `List[str]` | - |
+| `async detect_topic_split` | `history: list, model_preference: ModelPreference` | `Optional[Dict[str, Any]]` | - |
+| `async generate_title_for_conversation` | `history: list, model_preference: ModelPreference` | `str` | - |
+
+의존성: `_llm_utils`, `constants`, `dotenv`, `httpx`, `logging`, `models`, `os`, `typing`
+
+#### `pipeline_db.py` (369줄, 14,337B)
 > 4층 파이프라인 DB 관리 모듈.  테이블:   - designs           : 설계 결과 (사용자 확인 포함)   - tasks             : 태스크 분해 결과   - task_plans        : 태스크별 계획 단계   - execution_templates : 실행 그룹 템플릿 (재사용 핵심)   - task_plan_cache
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1012,26 +1216,13 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `get_task_plans` | `task_id: int, path` | `List[Dict[str, Any]]` | task_id에 속한 모든 계획 단계를 반환합니다. |
 | `get_next_pending_plan` | `task_id: int, path` | `Optional[Dict[str, Any]]` | 다음 실행 대기 중인 계획 단계를 반환합니다. |
 | `update_plan_status` | `plan_id: int, status: str, result: str, templat...` | `None` | - |
-| `save_execution_template` | `name: str, description: str, keywords: List[str...` | `int` | 실행 그룹 템플릿을 저장하고 template_id를 반환합니다. |
-| `find_best_template` | `keywords: List[str], path` | `Optional[Dict[str, Any]]` | 키워드 중복 수로 가장 유사한 활성 템플릿을 반환합니다 (기본 조회용). |
-| `list_templates` | `active_only: bool, limit: int, offset: int, path` | `List[Dict[str, Any]]` | 템플릿 목록을 반환합니다 (success_count 내림차순). |
-| `get_template` | `template_id: int, path` | `Optional[Dict[str, Any]]` | 단일 템플릿 전체 정보를 반환합니다. |
-| `disable_template` | `template_id: int, path` | `None` | 템플릿을 비활성화합니다. |
-| `enable_template` | `template_id: int, path` | `None` | 템플릿을 활성화합니다. |
-| `delete_template` | `template_id: int, path` | `None` | 템플릿을 삭제합니다. |
-| `get_template_stats` | `path` | `Dict[str, Any]` | 템플릿 전체 통계를 반환합니다. |
-| `auto_disable_failing_templates` | `fail_rate_threshold: float, min_uses: int, path` | `List[int]` | 실패율이 임계값을 초과한 템플릿을 자동 비활성화합니다. |
-| `increment_template_fail` | `template_id: int, path` | `None` | - |
-| `get_task_plan_cache` | `task_signature: str, path` | `Optional[List[Dict[str, Any]]]` | 태스크 시그니처로 캐시된 계획 단계를 반환하고 use_count를 증가시킵니다. |
-| `save_task_plan_cache` | `task_signature: str, keywords: List[str], plans...` | `None` | 태스크 계획 매핑 결과를 캐시에 저장합니다 (UPSERT). |
-| `log_tool_gap` | `required_tool: str, resolution_type: str, mcp_s...` | `None` | 도구 부재 이벤트를 기록합니다. 예외는 절대 발생시키지 않습니다. |
 | `set_cursor` | `conversation_id: str, phase: str, design_id: Op...` | `None` | 현재 파이프라인 위치를 저장합니다 (UPSERT). |
 | `get_cursor` | `conversation_id: str, path` | `Optional[Dict[str, Any]]` | 대화의 현재 파이프라인 커서를 반환합니다. |
 | `clear_cursor` | `conversation_id: str, path` | `None` | 파이프라인 커서를 idle 상태로 초기화합니다. |
 
-의존성: `constants`, `datetime`, `graph_manager`, `json`, `logging`, `typing`
+의존성: `_template_db`, `constants`, `datetime`, `graph_manager`, `json`, `logging`, `typing`
 
-#### `pipeline_manager.py` (585줄, 21,636B)
+#### `pipeline_manager.py` (593줄, 22,323B)
 > 4층 파이프라인 오케스트레이터.  흐름:   1. [DESIGN]   사용자 쿼리 → LLM(high) → 설계 생성 → DESIGN_CONFIRMATION   2. [TASKS]    설계 확인 → LLM(standard) → 태스크 분해   3. [PLANS]    각 태스크 → LLM(standard) → 계획 단계 매핑   4. [EXEC]     
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1041,7 +1232,27 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `async advance_after_execution` | `conversation_id: str, execution_result: str, hi...` | `AgentResponse` | 현재 계획 단계 완료 처리 후 다음 단계/태스크/완료를 반환합니다. |
 | `record_execution_success` | `plan_id: int, execution_group_dict: Dict[str, Any]` | `None` | 실행 성공 후 템플릿을 저장/업데이트합니다. |
 
-의존성: `graph_manager`, `hashlib`, `json`, `llm_client`, `logging`, `models`, `re`, `typing`
+의존성: `constants`, `graph_manager`, `hashlib`, `json`, `llm_client`, `logging`, `models`, `re`, `typing`
+
+#### `scheduler.py` (140줄, 4,977B)
+> APScheduler 기반 에이전트 스케줄러 싱글톤.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+
+**class `AgentScheduler`** (line 34)
+> APScheduler AsyncIOScheduler 기반 스케줄러 싱글톤.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `__init__` | `self` | - |
+| `start` | `self` | DB에서 enabled 스케줄을 로드하여 APScheduler에 등록하고 시작. |
+| `stop` | `self` | 스케줄러 종료. |
+| `add_task` | `self, task: dict` | 실행 중인 스케줄러에 새 태스크 등록. |
+| `remove_task` | `self, task_id: int` | 실행 중인 스케줄러에서 태스크 제거. |
+| `list_tasks` | `self` | DB에서 스케줄 태스크 목록 반환. |
+
+의존성: `apscheduler`, `constants`, `httpx`, `logging`, `typing`
 
 #### `template_engine.py` (208줄, 7,437B)
 > Phase 2 — 실행 템플릿 엔진.  기능:   1. 향상된 유사도 스코어링 (키워드 겹침 + 도구명 매칭 + 성공률 가중치)   2. LLM(local/standard) 기반 템플릿 인자 적응 — 구조 재사용, 값만 교체   3. 실패율 초과 템플릿 자동 비활성화 (auto_disable_failing_templates 위임)  템플릿 재사용 판단 임계
@@ -1143,7 +1354,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `datetime`, `graph_manager`, `json`, `logging`, `orchestrator`, `pathlib`, `pytest`, `tempfile`, `unittest`
 
-#### `test_api.py` (383줄, 15,862B)
+#### `test_api.py` (412줄, 18,059B)
 > orchestrator/api.py에 대한 단위 테스트
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1157,7 +1368,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_new_request_returns_plan_confirmation` | `self, sample_group` | 신규 사용자 입력 시 PLAN_CONFIRMATION 반환 |
 | `test_empty_plan_returns_final_answer` | `self` | 플래너가 빈 계획 반환 시 FINAL_ANSWER |
 
-**class `TestExecuteGroup`** (line 83)
+**class `TestExecuteGroup`** (line 94)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1166,7 +1377,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_missing_tool_returns_error` | `self, sample_group` | 도구를 찾을 수 없을 때 ERROR 반환 |
 | `test_empty_plan_returns_400` | `self` | 실행할 계획이 없으면 400 |
 
-**class `TestValidateRequirementPath`** (line 182)
+**class `TestValidateRequirementPath`** (line 207)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1177,7 +1388,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_oversized_file_raises` | `self, tmp_path` | - |
 | `test_exactly_1mb_passes` | `self, tmp_path` | - |
 
-**class `TestValidateToolArguments`** (line 221)
+**class `TestValidateToolArguments`** (line 246)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1187,7 +1398,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_all_params_allowed` | `self` | - |
 | `test_invalid_args_blocked_in_execute_group` | `self, sample_group` | execute_group에서 허용되지 않은 인자 사용 시 ERROR 반환 |
 
-**class `TestPruneHistory`** (line 290)
+**class `TestPruneHistory`** (line 313)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1196,7 +1407,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_empty_history_unchanged` | `self` | - |
 | `test_one_over_limit_removes_oldest` | `self` | - |
 
-**class `TestExtractFirstQuery`** (line 316)
+**class `TestExtractFirstQuery`** (line 339)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1207,13 +1418,93 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_finds_first_not_second` | `self` | - |
 | `test_non_string_entries_skipped` | `self` | - |
 
-**class `TestResultTruncationWarning`** (line 343)
+**class `TestResultTruncationWarning`** (line 366)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_truncation_logs_warning` | `self, sample_group, caplog` | 도구 결과가 1000자 초과 시 WARNING 로그 발생 |
 
-의존성: `api`, `asyncio`, `constants`, `httpx`, `logging`, `models`, `os`, `pytest`, `unittest`
+의존성: `api`, `constants`, `httpx`, `logging`, `models`, `os`, `pytest`, `unittest`
+
+#### `test_auto_mode.py` (158줄, 6,123B)
+> 자동 모드 민감 데이터 감지 + 히스토리 자동 요약 단위 테스트.
+
+**class `TestSensitiveDataDetection`** (line 16)
+> _check_sensitive_data() 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_sensitive_data` | `self` | - |
+| `test_password_detected` | `self` | - |
+| `test_api_key_detected` | `self` | - |
+| `test_aws_key_detected` | `self` | - |
+| `test_github_token_detected` | `self` | - |
+| `test_pem_key_detected` | `self` | - |
+| `test_empty_group` | `self` | - |
+
+**class `TestSecurityContextDetection`** (line 60)
+> _check_security_context() 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_safe_tool` | `self` | - |
+| `test_git_push_detected` | `self` | - |
+| `test_network_request_detected` | `self` | - |
+| `test_send_email_detected` | `self` | - |
+| `test_multiple_tools` | `self` | - |
+
+**class `TestMaybeAutoSummarize`** (line 103)
+> _maybe_auto_summarize() 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_below_threshold_no_summarize` | `self` | - |
+| `test_above_threshold_triggers_summarize` | `self` | - |
+| `test_already_summarized_skips` | `self` | 최근 항목에 이미 요약 마커가 있으면 재요약하지 않음. |
+| `test_summarize_failure_returns_original` | `self` | 요약 실패 시 원본 반환. |
+
+의존성: `importlib`, `main`, `orchestrator`, `os`, `pytest`, `sys`, `unittest`
+
+#### `test_circuit_breaker.py` (127줄, 4,659B)
+> Circuit Breaker 단위 테스트.
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+
+**class `TestDetectCircuitTrip`** (line 21)
+> _detect_circuit_trip() 에러 패턴 감지 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | - |
+| `test_anthropic_credit_exhausted` | `self` | - |
+| `test_gemini_resource_exhausted` | `self` | - |
+| `test_openai_insufficient_quota` | `self` | - |
+| `test_generic_rate_limit_429` | `self` | - |
+| `test_normal_error_no_trip` | `self` | 일반 에러는 circuit trip 없음. |
+| `test_ollama_connect_error_no_trip` | `self` | Ollama 연결 오류는 circuit trip 없음 (일시적 오류). |
+
+**class `TestCircuitBreakerState`** (line 73)
+> _trip / _is_tripped 상태 관리 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | - |
+| `test_trip_and_check` | `self` | - |
+| `test_expired_entry_auto_cleared` | `self` | - |
+| `test_not_tripped_provider` | `self` | - |
+
+**class `TestGetProviderStatus`** (line 102)
+> get_provider_status() 전체 상태 반환 테스트.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `setup_method` | `self` | - |
+| `test_all_available_by_default` | `self` | - |
+| `test_tripped_provider_shows_unavailable` | `self` | - |
+| `test_in_fallback_chain_flag` | `self` | - |
+
+의존성: `httpx`, `orchestrator`, `pytest`, `time`, `unittest`
 
 #### `test_config.py` (66줄, 2,762B)
 
@@ -1232,7 +1523,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `config`, `json`, `logging`, `pytest`
 
-#### `test_gemini_client.py` (115줄, 4,829B)
+#### `test_gemini_client.py` (127줄, 5,288B)
 > orchestrator/gemini_client.py에 대한 단위 테스트
 
 **class `TestTruncateHistory`** (line 13)
@@ -1243,39 +1534,39 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_normal_history` | `self` | 정상 history는 줄바꿈으로 연결 |
 | `test_truncation_over_max_chars` | `self` | max_chars 초과 시 최신 항목 우선 보존, 생략 표시 포함 |
 | `test_single_item_exceeds_max` | `self` | 단일 항목이 max_chars를 초과해도 최소 1개는 포함 |
-| `test_default_max_chars_is_constant` | `self` | 기본 max_chars가 DEFAULT_HISTORY_MAX_CHARS 상수와 일치 |
+| `test_default_max_chars_is_constant` | `self` | 기본 max_chars가 HISTORY_MAX_CHARS 상수와 일치 |
 
-**class `TestGetModelName`** (line 42)
-
-| 메서드 | 인자 | 설명 |
-|--------|------|------|
-| `test_high_preference` | `self` | model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환 |
-| `test_standard_preference` | `self` | model_preference='standard'이면 STANDARD_MODEL_NAME 반환 |
-| `test_auto_uses_config_active_model` | `self` | auto 모드는 model_config.json의 active_model 우선 반환 |
-| `test_auto_with_high_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='high'이면 HIGH_PERF_MODEL_NAME 폴백 |
-| `test_auto_with_standard_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='standard'이면 STANDARD_MODEL_NAME 폴백 |
-| `test_auto_fallback_on_exception` | `self` | auto + model_manager 오류 시 default_type 폴백 |
-
-**class `TestGenerateExecutionPlan`** (line 84)
+**class `TestGetModelName`** (line 55)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
-| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
+| `test_high_preference` | `self` | model_preference='high'이면 providers.gemini.high_model 반환 |
+| `test_standard_preference` | `self` | model_preference='standard'이면 providers.gemini.standard_model 반환 |
+| `test_auto_uses_config_active_model` | `self` | auto 모드는 active_model 우선 반환 |
+| `test_auto_with_high_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='high'이면 high_model 폴백 |
+| `test_auto_with_standard_default_fallback` | `self` | auto + active_model 비어있을 때 default_type='standard'이면 standard_model 폴백 |
+| `test_high_falls_back_to_active_when_no_high_model` | `self` | high_model 미설정 시 active_model로 폴백 |
 
-**class `TestGenerateFinalAnswer`** (line 93)
+**class `TestGenerateExecutionPlan`** (line 96)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
 
-**class `TestGenerateTitleForConversation`** (line 102)
+**class `TestGenerateFinalAnswer`** (line 105)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_client_raises_runtime_error` | `self` | client=None일 때 RuntimeError 발생 |
+
+**class `TestGenerateTitleForConversation`** (line 114)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_no_client_returns_default` | `self` | client=None일 때 기본 제목 반환 |
 | `test_short_history_returns_new_conversation` | `self` | history가 2개 미만이면 '새로운_대화' 반환 |
 
-의존성: `json`, `models`, `pytest`, `unittest`
+의존성: `constants`, `json`, `models`, `pytest`, `unittest`
 
 #### `test_graph_manager.py` (467줄, 18,415B)
 
@@ -1390,6 +1681,93 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `json`, `orchestrator`, `pytest`, `sqlite3`, `uuid`
 
+#### `test_grok_client.py` (118줄, 4,738B)
+> orchestrator/grok_client.py에 대한 단위 테스트
+
+**class `TestGetModelName`** (line 11)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_high` | `self` | model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환 |
+| `test_standard` | `self` | model_preference='standard'이면 STANDARD_MODEL_NAME 반환 |
+| `test_auto_high_default` | `self` | auto + default_type='high'이면 HIGH_PERF_MODEL_NAME 반환 |
+| `test_auto_standard_default` | `self` | auto + default_type='standard'이면 STANDARD_MODEL_NAME 반환 |
+
+**class `TestCallGrok`** (line 37)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_api_key_raises` | `self` | XAI_API_KEY 미설정 시 RuntimeError 발생 |
+| `test_response_parsed` | `self` | 정상 응답에서 content 추출 |
+| `test_uses_xai_base_url` | `self` | xAI API URL (api.x.ai)로 요청을 전송 |
+
+**class `TestGenerateTitle`** (line 97)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_api_key_returns_default` | `self` | XAI_API_KEY 미설정 시 기본 제목 반환 |
+| `test_short_history` | `self` | history가 2개 미만이면 '새로운_대화' 반환 |
+| `test_exception_returns_fallback` | `self` | _call_grok 예외 시 'Untitled_Conversation' 반환 |
+
+의존성: `pytest`, `unittest`
+
+#### `test_intent_gate_full.py` (172줄, 6,964B)
+> classify_intent_full() 5-카테고리 분류 단위 테스트.
+
+**class `TestIntentCategories`** (line 12)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_categories_set` | `self` | - |
+
+**class `TestClassifyIntentFull`** (line 23)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_dialogue_category` | `self` | - |
+| `test_code_write_category` | `self` | - |
+| `test_file_ops_category` | `self` | - |
+| `test_web_search_category` | `self` | - |
+| `test_analysis_category` | `self` | - |
+| `test_fallback_on_invalid` | `self` | 잘못된 카테고리 응답 시 'analysis' 폴백. |
+| `test_fallback_on_exception` | `self` | LLM 호출 실패 시 'analysis' 폴백. |
+| `test_parse_strips_whitespace` | `self` | 앞뒤 공백이 있어도 정상 파싱. |
+| `test_parse_uppercase` | `self` | 대소문자 무관 파싱. |
+
+**class `TestPromptTemplates`** (line 87)
+> 프롬프트 템플릿 등록 확인.
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_intent_full_template_registered` | `self` | - |
+| `test_intent_system_prompts_registered` | `self` | - |
+
+**class `TestComplexityCategories`** (line 113)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_complexity_set` | `self` | - |
+
+**class `TestClassifyIntentAndCategory`** (line 119)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_valid_pair_code_deep` | `self` | - |
+| `test_valid_pair_dialogue_quick` | `self` | - |
+| `test_valid_pair_analysis_ultrabrain` | `self` | - |
+| `test_fallback_on_invalid_intent` | `self` | - |
+| `test_fallback_on_invalid_complexity` | `self` | - |
+| `test_fallback_on_exception` | `self` | - |
+| `test_case_insensitive` | `self` | - |
+
+**class `TestClassifyIntentAndCategoryTemplate`** (line 166)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_template_registered` | `self` | - |
+
+의존성: `llm_client`, `pytest`, `unittest`
+
 #### `test_issue_tracker.py` (186줄, 6,613B)
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1439,7 +1817,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `orchestrator`, `pathlib`, `pytest`, `sqlite3`
 
-#### `test_mcp_db_manager.py` (591줄, 23,976B)
+#### `test_mcp_db_manager.py` (591줄, 24,000B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1634,7 +2012,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `json`, `os`, `pytest`, `tempfile`, `unittest`
 
-#### `test_model_manager.py` (303줄, 12,302B)
+#### `test_model_manager.py` (303줄, 12,282B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1712,7 +2090,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `models`, `pydantic`, `pytest`
 
-#### `test_ollama_client.py` (181줄, 7,692B)
+#### `test_ollama_client.py` (184줄, 7,955B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -1732,11 +2110,11 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
 | `test_returns_stripped_answer` | `self` | - |
-| `test_connect_error_raises_runtime` | `self` | - |
-| `test_error_fallback_returns_last_result` | `self` | - |
-| `test_error_fallback_no_result_in_history` | `self` | - |
+| `test_connect_error_returns_fallback` | `self` | ConnectError 시 폴백 문자열 반환 (예외 전파 대신 에러 통일 처리). |
+| `test_error_returns_fallback` | `self` | 예외 발생 시 폴백 문자열 반환 (에러 핸들링 통일). |
+| `test_error_empty_history_returns_fallback` | `self` | 히스토리 없어도 예외 시 폴백 문자열 반환. |
 
-**class `TestExtractKeywords`** (line 107)
+**class `TestExtractKeywords`** (line 110)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1744,7 +2122,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_dict_response` | `self` | - |
 | `test_failure_returns_empty` | `self` | - |
 
-**class `TestDetectTopicSplit`** (line 130)
+**class `TestDetectTopicSplit`** (line 133)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1752,7 +2130,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `test_no_split` | `self` | - |
 | `test_failure_returns_none` | `self` | - |
 
-**class `TestGenerateTitleForConversation`** (line 161)
+**class `TestGenerateTitleForConversation`** (line 164)
 
 | 메서드 | 인자 | 설명 |
 |--------|------|------|
@@ -1762,7 +2140,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `httpx`, `json`, `pytest`, `unittest`
 
-#### `test_omo_features.py` (528줄, 22,786B)
+#### `test_omo_features.py` (528줄, 22,834B)
 > OMO P1~P3 기능 단위 테스트.  P1-A: Ralph Loop 헬퍼 (_check_dangerous_tools, _DANGEROUS_TOOLS) P1-B: 카테고리 모델 라우팅 (_CATEGORY_TO_MODEL_PREF) P1-C: 컨텍스트 파일 자동 주입 (_load_context_files) P2-A: Todo Enforcer (_scan_in
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -1874,6 +2252,36 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `ast`, `asyncio`, `importlib`, `json`, `orchestrator`, `pathlib`, `pytest`, `sys`, `types`, `unittest`
 
+#### `test_openai_client.py` (120줄, 4,936B)
+> orchestrator/openai_client.py에 대한 단위 테스트
+
+**class `TestGetModelName`** (line 12)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_high` | `self` | model_preference='high'이면 HIGH_PERF_MODEL_NAME 반환 |
+| `test_standard` | `self` | model_preference='standard'이면 STANDARD_MODEL_NAME 반환 |
+| `test_auto_high_default` | `self` | auto + default_type='high'이면 HIGH_PERF_MODEL_NAME 반환 |
+| `test_auto_standard_default` | `self` | auto + default_type='standard'이면 STANDARD_MODEL_NAME 반환 |
+
+**class `TestCallOpenAI`** (line 38)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_api_key_raises` | `self` | OPENAI_API_KEY 미설정 시 RuntimeError 발생 |
+| `test_response_parsed` | `self` | 정상 응답에서 content 추출 |
+| `test_json_format_adds_response_format` | `self` | json_format=True 시 payload에 response_format 포함 |
+
+**class `TestGenerateTitle`** (line 99)
+
+| 메서드 | 인자 | 설명 |
+|--------|------|------|
+| `test_no_api_key_returns_default` | `self` | OPENAI_API_KEY 미설정 시 기본 제목 반환 |
+| `test_short_history` | `self` | history가 2개 미만이면 '새로운_대화' 반환 |
+| `test_exception_returns_fallback` | `self` | _call_openai 예외 시 'Untitled_Conversation' 반환 |
+
+의존성: `json`, `pytest`, `unittest`
+
 #### `test_pipeline.py` (297줄, 12,013B)
 > 4층 파이프라인 신규 모듈 테스트.
 
@@ -1967,7 +2375,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `orchestrator`, `pathlib`, `pytest`, `sqlite3`
 
-#### `test_tool_registry.py` (159줄, 5,741B)
+#### `test_tool_registry.py` (159줄, 5,752B)
 > orchestrator/tool_registry.py에 대한 단위 테스트
 
 **class `TestLoadLocalModules`** (line 13)
@@ -2060,7 +2468,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `api`, `httpx`, `pytest`, `unittest`
 
-#### `token_tracker.py` (128줄, 4,877B)
+#### `token_tracker.py` (117줄, 4,275B)
 > 요청별 LLM 토큰 사용량 추적.  ContextVar 기반으로 async 요청 단위로 격리됩니다. 각 LLM 클라이언트가 record()를 호출하고, api.py가 get_accumulated()로 수집합니다.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -2070,11 +2478,11 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `record` | `provider: str, model: str, input_tokens: int, o...` | `None` | 토큰 사용 1건을 현재 컨텍스트에 기록합니다. begin_tracking() 이후에만 동작합니다. |
 | `get_accumulated` | `` | `Optional[dict]` | 수집된 토큰 사용량을 집계하여 dict로 반환합니다. 기록이 없으면 None. |
 
-**class `_Entry`** (line 67)
+**class `_Entry`** (line 56)
 
 의존성: `contextvars`, `dataclasses`, `typing`
 
-#### `tool_discoverer.py` (289줄, 10,567B)
+#### `tool_discoverer.py` (312줄, 11,788B)
 > Phase 3 — 도구 발견 및 자동 구현 모듈.  우선순위:   1. 로컬 TOOLS / MCP 등록 도구에서 검색 (즉시)   2. npm/pip MCP 서버 탐색 (subprocess 기반)   3. LLM(high 티어)으로 Python 함수 자동 생성 → mcp_db_manager 저장 → 즉시 활성화  보안:   - npm/pip 명령 화이트리스
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -2088,7 +2496,7 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 
 의존성: `ast`, `constants`, `json`, `llm_client`, `logging`, `re`, `subprocess`, `typing`
 
-#### `tool_registry.py` (301줄, 11,452B)
+#### `tool_registry.py` (363줄, 13,661B)
 
 | 함수명 | 인자 | 반환 | 설명 |
 |--------|------|------|------|
@@ -2101,10 +2509,11 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `get_duplicate_tools` | `` | `Dict[str, List[str]]` | 2개 이상의 서버가 제공하는 도구 목록을 반환합니다. |
 | `get_all_tool_descriptions` | `` | `Dict[str, str]` | 모든 도구(로컬 + MCP)의 이름과 설명을 반환합니다. |
 | `get_filtered_tool_descriptions` | `allowed_skills` | `Dict[str, str]` | allowed_skills 필터를 적용한 도구 이름/설명 딕셔너리 반환. |
+| `get_tool_load_status` | `` | `dict` | 현재 로드된 도구의 실제 상태를 반환합니다. |
 
 의존성: `contextlib`, `importlib`, `inspect`, `logging`, `mcp`, `os`, `typing`
 
-#### `web_router.py` (290줄, 9,413B)
+#### `web_router.py` (406줄, 13,043B)
 > 웹 UI용 REST API 라우터 — /api/v1 prefix.
 
 | 함수명 | 인자 | 반환 | 설명 |
@@ -2128,23 +2537,55 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 | `update_persona` | `name: str, body: PersonaUpdate` | `-` | - |
 | `delete_persona` | `name: str` | `-` | - |
 | `list_macros` | `` | `-` | - |
+| `create_macro` | `body: MacroCreate` | `-` | - |
+| `update_macro` | `name: str, body: MacroUpdate` | `-` | - |
+| `delete_macro` | `name: str` | `-` | - |
 | `list_workflows` | `` | `-` | - |
+| `create_workflow` | `body: WorkflowCreate` | `-` | - |
+| `update_workflow` | `name: str, body: WorkflowUpdate` | `-` | - |
+| `delete_workflow` | `name: str` | `-` | - |
+| `get_tools_status` | `` | `-` | 현재 로드된 도구의 실제 상태를 반환합니다. |
+| `get_providers_status` | `` | `-` | LLM 프로바이더 Circuit Breaker 상태를 반환합니다. |
 
-**class `SystemPromptCreate`** (line 19)
+**class `SystemPromptCreate`** (line 43)
 
-**class `SystemPromptUpdate`** (line 26)
+**class `SystemPromptUpdate`** (line 50)
 
-**class `PersonaCreate`** (line 32)
+**class `PersonaCreate`** (line 56)
 
-**class `PersonaUpdate`** (line 42)
+**class `PersonaUpdate`** (line 66)
 
-**class `SkillToggle`** (line 51)
+**class `SkillToggle`** (line 75)
+
+**class `MacroCreate`** (line 79)
+
+**class `MacroUpdate`** (line 86)
+
+**class `WorkflowCreate`** (line 92)
+
+**class `WorkflowUpdate`** (line 98)
 
 의존성: `fastapi`, `pydantic`, `typing`
 
+#### `wisdom_store.py` (229줄, 7,716B)
+
+| 함수명 | 인자 | 반환 | 설명 |
+|--------|------|------|------|
+| `save_wisdom` | `convo_id: str, entries: List[dict], db_path: Path` | `None` | 실행 결과에서 추출한 지식 항목을 저장합니다. |
+| `load_wisdom` | `convo_id: str, limit: int, query: Optional[str]...` | `List[dict]` | 대화에 저장된 지식 항목을 반환합니다 (최신순). |
+| `search_wisdom_fts` | `query: str, convo_id: Optional[str], limit: int...` | `List[dict]` | FTS5로 wisdom 전문 검색. |
+| `add_scheduled_task` | `name: str, query: str, cron_expr: str, convo_id...` | `int` | 스케줄 태스크를 추가하고 id를 반환. |
+| `list_scheduled_tasks` | `db_path: Path` | `List[dict]` | 모든 스케줄 태스크 목록 반환. |
+| `get_scheduled_task` | `task_id: int, db_path: Path` | `Optional[dict]` | ID로 스케줄 태스크 조회. |
+| `remove_scheduled_task` | `task_id: int, db_path: Path` | `bool` | 스케줄 태스크 삭제. 성공 여부 반환. |
+| `toggle_scheduled_task` | `task_id: int, enabled: bool, db_path: Path` | `bool` | 스케줄 태스크 활성화/비활성화. 성공 여부 반환. |
+| `update_scheduled_task_run` | `task_id: int, next_run_at: str, db_path: Path` | `None` | 태스크 실행 후 last_run_at/run_count/next_run_at 갱신. |
+
+의존성: `constants`, `graph_manager`, `logging`, `pathlib`, `typing`
+
 ### static/
 
-#### `index.html` (?줄, 38,394B)
+#### `index.html` (?줄, 69,685B)
 
 ### system_prompts/
 
@@ -2155,31 +2596,51 @@ python main.py gap discover "<tool_hint>"            # 도구 발견 실행
 ## 12. 모듈 간 의존성 맵 (자동 생성)
 
 ```
-  main.py → orchestrator.agent_config_manager, orchestrator.graph_manager, orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.history_manager.split_conversation, orchestrator.issue_tracker, orchestrator.llm_client.generate_clarifying_questions, orchestrator.llm_client.summarize_history, orchestrator.mcp_db_manager, orchestrator.mcp_manager, orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model, orchestrator.pipeline_db.delete_template, orchestrator.pipeline_db.disable_template, orchestrator.pipeline_db.enable_template, orchestrator.pipeline_db.get_template, orchestrator.pipeline_db.get_template_stats, orchestrator.pipeline_db.init_db, orchestrator.pipeline_db.list_templates, orchestrator.test_registry, orchestrator.tool_discoverer.discover_and_resolve, orchestrator.tool_discoverer.get_gap_report, orchestrator.tool_registry.TOOL_DESCRIPTIONS
+  _run_cmd.py → orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.history_manager.split_conversation, orchestrator.llm_client.generate_clarifying_questions, orchestrator.llm_client.summarize_history
+  agent_config_cmds.py → orchestrator.agent_config_manager
+  conv_cmds.py → orchestrator.graph_manager, orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation
+  core.py → orchestrator.graph_manager, orchestrator.history_manager.list_conversations, orchestrator.history_manager.load_conversation, orchestrator.history_manager.new_conversation, orchestrator.history_manager.split_conversation, orchestrator.model_manager.get_active_model, orchestrator.model_manager.load_config
+  mcp_cmds.py → orchestrator.mcp_db_manager, orchestrator.mcp_manager, orchestrator.tool_registry.TOOL_DESCRIPTIONS
+  model_cmds.py → orchestrator.model_manager.fetch_models, orchestrator.model_manager.get_active_model, orchestrator.model_manager.list_providers, orchestrator.model_manager.load_config, orchestrator.model_manager.set_active_model
+  ops_cmds.py → orchestrator.issue_tracker, orchestrator.pipeline_db.delete_template, orchestrator.pipeline_db.disable_template, orchestrator.pipeline_db.enable_template, orchestrator.pipeline_db.get_template, orchestrator.pipeline_db.get_template_stats, orchestrator.pipeline_db.init_db, orchestrator.pipeline_db.list_templates, orchestrator.test_registry, orchestrator.tool_discoverer.discover_and_resolve, orchestrator.tool_discoverer.get_gap_report
   test_hashline_editor.py → mcp_modules.hashline_editor._compute_line_hash, mcp_modules.hashline_editor.hashline_edit, mcp_modules.hashline_editor.read_file_with_hashes
+  _agent_handlers.py → .agent_config_manager, .graph_manager, .history_manager, .issue_tracker, .pipeline_manager, .token_tracker
+  _api_helpers.py → .agent_config_manager, .mcp_db_manager, .token_tracker, .tool_discoverer, .tool_registry
+  _circuit_breaker.py → .claude_client, .gemini_client, .grok_client, .ollama_client, .openai_client
+  _llm_utils.py → .agent_config_manager
+  _mcp_code_ops.py → .config
   api.py → .agent_config_manager, .graph_manager, .history_manager, .issue_tracker, .mcp_db_manager, .pipeline_db, .pipeline_manager, .token_tracker, .tool_registry
   claude_client.py → .agent_config_manager, .token_tracker
   gemini_client.py → .agent_config_manager, .token_tracker
+  grok_client.py → .token_tracker
   history_manager.py → .graph_manager
-  llm_client.py → .agent_config_manager, .claude_client, .gemini_client, .ollama_client
+  llm_client.py → .agent_config_manager
+  mcp_db_manager.py → .config
   mcp_manager.py → .config
-  ollama_client.py → .agent_config_manager, .token_tracker
+  ollama_client.py → .token_tracker
+  openai_client.py → .token_tracker
   pipeline_manager.py → .graph_manager, .history_manager, .llm_router, .pipeline_db, .template_engine, .token_tracker, .tool_registry
+  scheduler.py → .graph_manager
   template_engine.py → .pipeline_db
   test_agent_config_manager.py → .agent_config_manager, orchestrator.agent_config_manager
+  test_auto_mode.py → orchestrator.api._maybe_auto_summarize, orchestrator.constants.HISTORY_AUTO_SUMMARIZE_THRESHOLD, orchestrator.constants.HISTORY_KEEP_RECENT, orchestrator.constants.HISTORY_SUMMARY_MARKER
+  test_circuit_breaker.py → orchestrator.llm_client, orchestrator.llm_client.get_provider_status
   test_config.py → .config
   test_gemini_client.py → .gemini_client
   test_graph_manager.py → orchestrator.gemini_client, orchestrator.gemini_client.detect_topic_split, orchestrator.gemini_client.extract_keywords, orchestrator.graph_manager._fetch_keywords, orchestrator.graph_manager.assign_conversation_to_group, orchestrator.graph_manager.assign_conversation_to_topic, orchestrator.graph_manager.assign_keywords_to_conversation, orchestrator.graph_manager.create_conversation, orchestrator.graph_manager.create_group, orchestrator.graph_manager.create_topic, orchestrator.graph_manager.delete_conversation, orchestrator.graph_manager.delete_group, orchestrator.graph_manager.delete_topic, orchestrator.graph_manager.get_db, orchestrator.graph_manager.get_linked_conversations, orchestrator.graph_manager.get_or_create_keyword, orchestrator.graph_manager.init_db, orchestrator.graph_manager.link_conversations, orchestrator.graph_manager.link_topics, orchestrator.graph_manager.list_conversations, orchestrator.graph_manager.list_groups, orchestrator.graph_manager.list_keywords, orchestrator.graph_manager.list_topics, orchestrator.graph_manager.load_conversation, orchestrator.graph_manager.migrate_json_to_sqlite, orchestrator.graph_manager.remove_conversation_from_group, orchestrator.graph_manager.save_conversation, orchestrator.graph_manager.split_conversation, orchestrator.graph_manager.update_conversation_keywords
+  test_grok_client.py → .grok_client
+  test_intent_gate_full.py → .agent_config_manager
   test_issue_tracker.py → orchestrator.issue_tracker.capture, orchestrator.issue_tracker.capture_exception, orchestrator.issue_tracker.get_issue, orchestrator.issue_tracker.init_db, orchestrator.issue_tracker.list_issues, orchestrator.issue_tracker.update_status
-  test_mcp_db_manager.py → orchestrator.constants.MAX_FUNC_NAMES_PER_SESSION, orchestrator.graph_manager.get_db, orchestrator.mcp_db_manager, orchestrator.mcp_db_manager.MCP_CACHE_DIR, orchestrator.mcp_db_manager._extract_preamble, orchestrator.mcp_db_manager._extract_test_map, orchestrator.mcp_db_manager._validate_code_syntax, orchestrator.mcp_db_manager.activate_function, orchestrator.mcp_db_manager.end_session, orchestrator.mcp_db_manager.generate_temp_module, orchestrator.mcp_db_manager.get_active_function, orchestrator.mcp_db_manager.get_function_versions, orchestrator.mcp_db_manager.get_usage_stats, orchestrator.mcp_db_manager.import_from_file, orchestrator.mcp_db_manager.init_db, orchestrator.mcp_db_manager.list_functions, orchestrator.mcp_db_manager.load_module_in_memory, orchestrator.mcp_db_manager.log_usage, orchestrator.mcp_db_manager.register_function, orchestrator.mcp_db_manager.run_function_tests, orchestrator.mcp_db_manager.set_module_preamble, orchestrator.mcp_db_manager.start_session, orchestrator.mcp_db_manager.update_function_test_code
+  test_mcp_db_manager.py → orchestrator._mcp_usage_tracker, orchestrator.constants.MAX_FUNC_NAMES_PER_SESSION, orchestrator.graph_manager.get_db, orchestrator.mcp_db_manager.MCP_CACHE_DIR, orchestrator.mcp_db_manager._extract_preamble, orchestrator.mcp_db_manager._extract_test_map, orchestrator.mcp_db_manager._validate_code_syntax, orchestrator.mcp_db_manager.activate_function, orchestrator.mcp_db_manager.end_session, orchestrator.mcp_db_manager.generate_temp_module, orchestrator.mcp_db_manager.get_active_function, orchestrator.mcp_db_manager.get_function_versions, orchestrator.mcp_db_manager.get_usage_stats, orchestrator.mcp_db_manager.import_from_file, orchestrator.mcp_db_manager.init_db, orchestrator.mcp_db_manager.list_functions, orchestrator.mcp_db_manager.load_module_in_memory, orchestrator.mcp_db_manager.log_usage, orchestrator.mcp_db_manager.register_function, orchestrator.mcp_db_manager.run_function_tests, orchestrator.mcp_db_manager.set_module_preamble, orchestrator.mcp_db_manager.start_session, orchestrator.mcp_db_manager.update_function_test_code
   test_mcp_manager.py → .mcp_manager
   test_model_manager.py → .model_manager
   test_ollama_client.py → .ollama_client
   test_omo_features.py → orchestrator.agent_config_manager, orchestrator.llm_client._call_with_fallback, orchestrator.llm_client._get_fallback_chain, orchestrator.llm_client.classify_intent, orchestrator.llm_client.summarize_history, orchestrator.tool_registry
+  test_openai_client.py → .openai_client
   test_pipeline.py → orchestrator.llm_router.get_tier, orchestrator.llm_router.infer_complexity_from_query, orchestrator.pipeline_db.auto_disable_failing_templates, orchestrator.pipeline_db.clear_cursor, orchestrator.pipeline_db.confirm_design, orchestrator.pipeline_db.create_design, orchestrator.pipeline_db.disable_template, orchestrator.pipeline_db.enable_template, orchestrator.pipeline_db.find_best_template, orchestrator.pipeline_db.get_active_design, orchestrator.pipeline_db.get_cursor, orchestrator.pipeline_db.get_db, orchestrator.pipeline_db.get_design, orchestrator.pipeline_db.get_task_plan_cache, orchestrator.pipeline_db.get_template_stats, orchestrator.pipeline_db.increment_template_fail, orchestrator.pipeline_db.init_db, orchestrator.pipeline_db.list_templates, orchestrator.pipeline_db.log_tool_gap, orchestrator.pipeline_db.save_execution_template, orchestrator.pipeline_db.save_task_plan_cache, orchestrator.pipeline_db.set_cursor, orchestrator.pipeline_manager._make_task_signature, orchestrator.template_engine.find_best_template_scored, orchestrator.tool_discoverer._is_code_safe, orchestrator.tool_discoverer._run_safe, orchestrator.tool_discoverer.find_tools_for_step, orchestrator.tool_discoverer.get_gap_report, orchestrator.tool_registry
   test_test_registry.py → orchestrator.test_registry.get_test, orchestrator.test_registry.import_all, orchestrator.test_registry.import_test_file, orchestrator.test_registry.init_db, orchestrator.test_registry.list_tests, orchestrator.test_registry.run_test
   test_tool_registry.py → .config, .tool_registry
   tool_discoverer.py → .agent_config_manager, .mcp_db_manager, .pipeline_db, .tool_registry
   tool_registry.py → .config, .mcp_db_manager
-  web_router.py → .agent_config_manager, .graph_manager, .mcp_db_manager
+  web_router.py → .agent_config_manager, .graph_manager, .llm_client, .mcp_db_manager, .tool_registry
 ```
